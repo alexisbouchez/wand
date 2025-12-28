@@ -77,16 +77,16 @@ PHASE 5: TEMPLATE ENGINE
 
 PHASE 6: SSH CONNECTION
 -----------------------
-[ ] SSH connection with key auth
-[ ] SSH connection with password
-[ ] SSH connection with agent
+[x] SSH connection with key auth
+[x] SSH connection with password
+[x] SSH connection with agent
 [ ] SSH config file parsing (~/.ssh/config)
 [ ] Connection pooling/reuse
-[ ] Sudo/become support over SSH
-[ ] SCP file transfer
-[ ] SFTP file transfer
+[x] Sudo/become support over SSH
+[x] SCP file transfer
+[x] SFTP file transfer
 [ ] Connection timeout handling
-[ ] Tests with mock SSH server
+[x] Tests with mock SSH server
 
 PHASE 7: CORE MODULES
 ---------------------

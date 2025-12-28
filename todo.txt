@@ -1,0 +1,247 @@
+WAND TODO
+=========
+
+[x] Create GitHub repository
+[x] Write readme.txt
+[x] Write todo.txt
+
+PHASE 1: PROJECT SETUP
+----------------------
+[x] Initialize Cargo project
+[x] Add .gitignore
+[x] Set up basic CLI with clap
+[x] Add error handling with thiserror/anyhow
+[x] First passing test
+
+PHASE 2: INVENTORY PARSING
+--------------------------
+[ ] Parse INI inventory file (hosts only)
+[ ] Parse INI inventory with groups
+[ ] Parse INI inventory with host variables
+[ ] Parse INI inventory with group variables
+[ ] Parse YAML inventory file
+[ ] Support [all] and [ungrouped] special groups
+[ ] Support group children (:children suffix)
+[ ] Support host ranges (web[1:10].example.com)
+[ ] Inventory struct with query methods
+[ ] Tests for all inventory formats
+
+PHASE 3: PLAYBOOK PARSING
+-------------------------
+[ ] Parse minimal playbook (hosts + tasks)
+[ ] Parse task with module and args
+[ ] Parse task with name
+[ ] Parse task with when conditional
+[ ] Parse task with register
+[ ] Parse task with loop/with_items
+[ ] Parse task with notify
+[ ] Parse handlers section
+[ ] Parse vars section
+[ ] Parse vars_files
+[ ] Parse become/become_user
+[ ] Parse roles
+[ ] Parse imports (import_tasks, import_playbook)
+[ ] Parse includes (include_tasks)
+[ ] Playbook validation
+[ ] Tests for playbook parsing
+
+PHASE 4: VARIABLE SYSTEM
+------------------------
+[ ] Variable storage and lookup
+[ ] Variable precedence (22 levels like Ansible)
+[ ] Host variables (host_vars/)
+[ ] Group variables (group_vars/)
+[ ] Playbook variables
+[ ] Task variables
+[ ] Registered variables
+[ ] Extra variables (-e flag)
+[ ] Facts (gathered from remote)
+[ ] Magic variables (inventory_hostname, groups, etc.)
+[ ] Variable interpolation in strings
+[ ] Tests for variable precedence
+
+PHASE 5: TEMPLATE ENGINE
+------------------------
+[ ] Basic variable substitution {{ var }}
+[ ] Filters: default
+[ ] Filters: lower, upper, capitalize
+[ ] Filters: replace, regex_replace
+[ ] Filters: join, split
+[ ] Filters: to_json, to_yaml
+[ ] Filters: basename, dirname
+[ ] Conditionals: {% if %}
+[ ] Loops: {% for %}
+[ ] Comments: {# #}
+[ ] Template file processing
+[ ] Tests for templating
+
+PHASE 6: SSH CONNECTION
+-----------------------
+[ ] SSH connection with key auth
+[ ] SSH connection with password
+[ ] SSH connection with agent
+[ ] SSH config file parsing (~/.ssh/config)
+[ ] Connection pooling/reuse
+[ ] Sudo/become support over SSH
+[ ] SCP file transfer
+[ ] SFTP file transfer
+[ ] Connection timeout handling
+[ ] Tests with mock SSH server
+
+PHASE 7: CORE MODULES
+---------------------
+[ ] Module execution framework
+[ ] Module result parsing (JSON)
+[ ] command module
+[ ] shell module
+[ ] raw module
+[ ] script module
+[ ] copy module
+[ ] file module (state: file/directory/link/absent)
+[ ] template module
+[ ] lineinfile module
+[ ] blockinfile module
+[ ] fetch module
+[ ] synchronize module
+[ ] Tests for each module
+
+PHASE 8: PACKAGE MODULES
+------------------------
+[ ] apt module
+[ ] yum module
+[ ] dnf module
+[ ] pip module
+[ ] gem module
+[ ] npm module
+[ ] package module (generic)
+[ ] Tests for package modules
+
+PHASE 9: SERVICE MODULES
+------------------------
+[ ] service module
+[ ] systemd module
+[ ] sysvinit module
+[ ] Tests for service modules
+
+PHASE 10: USER MODULES
+----------------------
+[ ] user module
+[ ] group module
+[ ] authorized_key module
+[ ] Tests for user modules
+
+PHASE 11: EXECUTION ENGINE
+--------------------------
+[ ] Sequential task execution
+[ ] Host loop execution
+[ ] Parallel host execution
+[ ] Handler execution (at end of play)
+[ ] Handler notification deduplication
+[ ] Block/rescue/always support
+[ ] Failed_when support
+[ ] Changed_when support
+[ ] Ignore_errors support
+[ ] Any_errors_fatal support
+[ ] Max_fail_percentage support
+[ ] Serial execution
+[ ] Throttle support
+[ ] Run_once support
+[ ] Delegate_to support
+[ ] Tests for execution engine
+
+PHASE 12: CHECK MODE
+--------------------
+[ ] Check mode flag (--check)
+[ ] Module check mode support
+[ ] Diff mode flag (--diff)
+[ ] Diff output formatting
+[ ] Tests for check mode
+
+PHASE 13: VAULT
+---------------
+[ ] Vault file detection (!vault header)
+[ ] AES256 decryption
+[ ] Vault password file
+[ ] Vault password prompt
+[ ] Inline vault variables
+[ ] Vault encrypt command
+[ ] Vault decrypt command
+[ ] Vault view command
+[ ] Tests for vault
+
+PHASE 14: CLI COMPLETION
+------------------------
+[ ] --inventory / -i flag
+[ ] --limit / -l flag
+[ ] --tags / -t flag
+[ ] --skip-tags flag
+[ ] --check / -C flag
+[ ] --diff / -D flag
+[ ] --verbose / -v flag (multiple levels)
+[ ] --extra-vars / -e flag
+[ ] --ask-pass / -k flag
+[ ] --ask-become-pass / -K flag
+[ ] --become / -b flag
+[ ] --become-user flag
+[ ] --become-method flag
+[ ] --forks / -f flag
+[ ] --timeout / -T flag
+[ ] --private-key flag
+[ ] --user / -u flag
+[ ] --vault-password-file flag
+[ ] --list-hosts flag
+[ ] --list-tasks flag
+[ ] --syntax-check flag
+[ ] --version flag
+[ ] Shell completions (bash, zsh, fish)
+
+PHASE 15: OUTPUT & LOGGING
+--------------------------
+[ ] Colored output
+[ ] Task status indicators (ok, changed, failed, skipped)
+[ ] Recap summary
+[ ] Verbose output levels
+[ ] JSON output mode
+[ ] YAML output mode
+[ ] Log file output
+[ ] Callback plugin compatibility (basic)
+
+PHASE 16: PERFORMANCE
+---------------------
+[ ] Connection multiplexing
+[ ] Pipelining
+[ ] Fact caching
+[ ] Async task support
+[ ] Poll support
+[ ] Mitogen-style optimization research
+
+PHASE 17: ROLES
+---------------
+[ ] Role directory structure detection
+[ ] Role tasks/main.yml
+[ ] Role handlers/main.yml
+[ ] Role vars/main.yml
+[ ] Role defaults/main.yml
+[ ] Role templates/
+[ ] Role files/
+[ ] Role meta/main.yml (dependencies)
+[ ] Galaxy role installation (nice-to-have)
+
+PHASE 18: TESTING & QUALITY
+---------------------------
+[ ] Unit test coverage > 80%
+[ ] Integration tests with real SSH
+[ ] Ansible playbook compatibility tests
+[ ] Benchmarks vs Ansible
+[ ] CI/CD pipeline
+[ ] Documentation generation
+[ ] Release automation
+
+PHASE 19: EXTRAS
+----------------
+[ ] ansible.cfg parsing
+[ ] Environment variable configuration
+[ ] Lookup plugins (file, env, pipe)
+[ ] Local connection type
+[ ] Docker connection type
+[ ] Windows target support (future)

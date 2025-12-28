@@ -1,0 +1,44 @@
+- name: Test playbook
+  hosts: webservers
+  vars:
+    greeting: Hello
+    app_name: myapp
+
+  tasks:
+    - name: Show hostname
+      command: hostname
+
+    - name: Echo greeting
+      shell: echo "{{ greeting }} from {{ inventory_hostname }}"
+      register: echo_result
+
+    - name: Create app directory
+      file:
+        path: /tmp/{{ app_name }}
+        state: directory
+        mode: "0755"
+
+    - name: Copy config file
+      copy:
+        dest: /tmp/{{ app_name }}/config.txt
+        content: |
+          app_name={{ app_name }}
+          host={{ inventory_hostname }}
+
+    - name: Check if nginx installed
+      command: which nginx
+      register: nginx_check
+
+    - name: Install nginx
+      apt:
+        name: nginx
+        state: present
+      when: nginx_check.rc != "0"
+      notify:
+        - restart nginx
+
+  handlers:
+    - name: restart nginx
+      service:
+        name: nginx
+        state: restarted

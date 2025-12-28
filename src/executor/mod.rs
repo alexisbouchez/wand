@@ -1,9 +1,45 @@
 use crate::inventory::Inventory;
-use crate::modules::{self, ModuleArgs, ModuleResult};
+use crate::modules::{ModuleArgs, ModuleResult};
 use crate::playbook::{Play, Task};
-use crate::ssh::{Auth, SshConnection};
+use crate::ssh::{Auth, CommandResult, LocalConnection, SshConnection};
 use crate::template;
+use anyhow::Result;
 use std::collections::{HashMap, HashSet};
+
+pub enum Connection {
+    Ssh(SshConnection),
+    Local(LocalConnection),
+}
+
+impl Connection {
+    pub fn exec(&self, command: &str) -> Result<CommandResult> {
+        match self {
+            Connection::Ssh(c) => c.exec(command),
+            Connection::Local(c) => c.exec(command),
+        }
+    }
+
+    pub fn write_file(&self, path: &str, content: &[u8], mode: i32) -> Result<()> {
+        match self {
+            Connection::Ssh(c) => c.write_file(path, content, mode),
+            Connection::Local(c) => c.write_file(path, content, mode),
+        }
+    }
+
+    pub fn read_file(&self, path: &str) -> Result<Vec<u8>> {
+        match self {
+            Connection::Ssh(c) => c.read_file(path),
+            Connection::Local(c) => c.read_file(path),
+        }
+    }
+
+    pub fn host(&self) -> &str {
+        match self {
+            Connection::Ssh(c) => c.host(),
+            Connection::Local(c) => c.host(),
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct Executor {
@@ -110,35 +146,41 @@ impl Executor {
         };
 
         // Build connection
-        let connect_host = host.vars.get("ansible_host").unwrap_or(&host.name);
-        let port: u16 = host
-            .vars
-            .get("ansible_port")
-            .and_then(|p| p.parse().ok())
-            .unwrap_or(22);
-        let user = host
-            .vars
-            .get("ansible_user")
-            .cloned()
-            .unwrap_or_else(|| "root".to_string());
+        let connection_type = host.vars.get("ansible_connection").map(|s| s.as_str());
 
-        let conn = match SshConnection::connect(connect_host, port, &user, auth.clone()) {
-            Ok(c) => c,
-            Err(e) => {
-                result.failed = 1;
-                result.task_results.push(TaskResult {
-                    task_name: "CONNECT".to_string(),
-                    host: host_name.to_string(),
-                    result: ModuleResult::failed(&format!("connection failed: {}", e)),
-                });
-                return result;
+        let conn: Connection = if connection_type == Some("local") {
+            Connection::Local(LocalConnection::new())
+        } else {
+            let connect_host = host.vars.get("ansible_host").unwrap_or(&host.name);
+            let port: u16 = host
+                .vars
+                .get("ansible_port")
+                .and_then(|p| p.parse().ok())
+                .unwrap_or(22);
+            let user = host
+                .vars
+                .get("ansible_user")
+                .cloned()
+                .unwrap_or_else(|| "root".to_string());
+
+            match SshConnection::connect(connect_host, port, &user, auth.clone()) {
+                Ok(c) => Connection::Ssh(c),
+                Err(e) => {
+                    result.failed = 1;
+                    result.task_results.push(TaskResult {
+                        task_name: "CONNECT".to_string(),
+                        host: host_name.to_string(),
+                        result: ModuleResult::failed(&format!("connection failed: {}", e)),
+                    });
+                    return result;
+                }
             }
         };
 
         // Build variables for this host
         let mut host_vars = self.vars.clone();
         host_vars.insert("inventory_hostname".to_string(), host_name.to_string());
-        host_vars.insert("ansible_host".to_string(), connect_host.to_string());
+        host_vars.insert("ansible_host".to_string(), host.vars.get("ansible_host").unwrap_or(&host.name).clone());
         for (k, v) in &host.vars {
             host_vars.insert(k.clone(), v.clone());
         }
@@ -188,7 +230,7 @@ impl Executor {
 
     fn run_task(
         &self,
-        conn: &SshConnection,
+        conn: &Connection,
         task: &Task,
         vars: &mut HashMap<String, String>,
         notified: &mut HashSet<String>,
@@ -287,21 +329,285 @@ fn extract_module(task: &Task, vars: &HashMap<String, String>) -> Option<(String
 }
 
 fn run_module(
-    conn: &SshConnection,
+    conn: &Connection,
     module: &str,
     args: &ModuleArgs,
     vars: &HashMap<String, String>,
 ) -> ModuleResult {
     match module {
-        "command" => modules::command::run(conn, args),
-        "shell" => modules::shell::run(conn, args),
-        "copy" => modules::copy::run(conn, args),
-        "file" => modules::file::run(conn, args),
-        "template" => modules::template::run(conn, args, vars),
-        "apt" => modules::apt::run(conn, args),
-        "service" => modules::service::run(conn, args),
-        "lineinfile" => modules::lineinfile::run(conn, args),
+        "command" => run_command(conn, args),
+        "shell" => run_shell(conn, args),
+        "copy" => run_copy(conn, args),
+        "file" => run_file(conn, args),
+        "template" => run_template(conn, args, vars),
+        "apt" => run_apt(conn, args),
+        "service" => run_service(conn, args),
+        "lineinfile" => run_lineinfile(conn, args),
         _ => ModuleResult::failed(&format!("unknown module: {}", module)),
+    }
+}
+
+fn run_command(conn: &Connection, args: &ModuleArgs) -> ModuleResult {
+    let cmd = match args.get("_raw") {
+        Some(c) => c.clone(),
+        None => match args.require("cmd") {
+            Ok(c) => c.clone(),
+            Err(e) => return ModuleResult::failed(&e),
+        },
+    };
+
+    let chdir = args.get("chdir");
+    let full_cmd = if let Some(dir) = chdir {
+        format!("cd {} && {}", dir, cmd)
+    } else {
+        cmd
+    };
+
+    match conn.exec(&full_cmd) {
+        Ok(result) => ModuleResult::changed("command executed")
+            .with_output(&result.stdout, &result.stderr, result.exit_code),
+        Err(e) => ModuleResult::failed(&format!("command failed: {}", e)),
+    }
+}
+
+fn run_shell(conn: &Connection, args: &ModuleArgs) -> ModuleResult {
+    let cmd = match args.get("_raw") {
+        Some(c) => c.clone(),
+        None => match args.require("cmd") {
+            Ok(c) => c.clone(),
+            Err(e) => return ModuleResult::failed(&e),
+        },
+    };
+
+    let chdir = args.get("chdir");
+    let full_cmd = if let Some(dir) = chdir {
+        format!("cd {} && sh -c '{}'", dir, cmd.replace('\'', "'\\''"))
+    } else {
+        format!("sh -c '{}'", cmd.replace('\'', "'\\''"))
+    };
+
+    match conn.exec(&full_cmd) {
+        Ok(result) => ModuleResult::changed("shell executed")
+            .with_output(&result.stdout, &result.stderr, result.exit_code),
+        Err(e) => ModuleResult::failed(&format!("shell failed: {}", e)),
+    }
+}
+
+fn run_copy(conn: &Connection, args: &ModuleArgs) -> ModuleResult {
+    let dest = match args.require("dest") {
+        Ok(d) => d.clone(),
+        Err(e) => return ModuleResult::failed(&e),
+    };
+
+    let mode = args.get_or("mode", "0644");
+    let mode_int = i32::from_str_radix(&mode, 8).unwrap_or(0o644);
+
+    if let Some(content) = args.get("content") {
+        match conn.read_file(&dest) {
+            Ok(existing) if existing == content.as_bytes() => {
+                return ModuleResult::ok("content unchanged");
+            }
+            _ => {}
+        }
+
+        match conn.write_file(&dest, content.as_bytes(), mode_int) {
+            Ok(_) => ModuleResult::changed("content copied"),
+            Err(e) => ModuleResult::failed(&format!("failed to write: {}", e)),
+        }
+    } else if let Some(src) = args.get("src") {
+        let content = match std::fs::read(src) {
+            Ok(c) => c,
+            Err(e) => return ModuleResult::failed(&format!("failed to read source: {}", e)),
+        };
+
+        match conn.read_file(&dest) {
+            Ok(existing) if existing == content => {
+                return ModuleResult::ok("file unchanged");
+            }
+            _ => {}
+        }
+
+        match conn.write_file(&dest, &content, mode_int) {
+            Ok(_) => ModuleResult::changed("file copied"),
+            Err(e) => ModuleResult::failed(&format!("failed to copy: {}", e)),
+        }
+    } else {
+        ModuleResult::failed("either 'src' or 'content' required")
+    }
+}
+
+fn run_file(conn: &Connection, args: &ModuleArgs) -> ModuleResult {
+    let path = match args.require("path") {
+        Ok(p) => p.clone(),
+        Err(e) => return ModuleResult::failed(&e),
+    };
+
+    let state = args.get_or("state", "file");
+
+    match state.as_str() {
+        "directory" => {
+            match conn.exec(&format!("test -d {}", path)) {
+                Ok(r) if r.exit_code == 0 => ModuleResult::ok("directory exists"),
+                _ => match conn.exec(&format!("mkdir -p {}", path)) {
+                    Ok(r) if r.exit_code == 0 => ModuleResult::changed("directory created"),
+                    _ => ModuleResult::failed("failed to create directory"),
+                },
+            }
+        }
+        "absent" => {
+            match conn.exec(&format!("test -e {}", path)) {
+                Ok(r) if r.exit_code != 0 => ModuleResult::ok("already absent"),
+                _ => match conn.exec(&format!("rm -rf {}", path)) {
+                    Ok(r) if r.exit_code == 0 => ModuleResult::changed("removed"),
+                    _ => ModuleResult::failed("failed to remove"),
+                },
+            }
+        }
+        "touch" => {
+            match conn.exec(&format!("touch {}", path)) {
+                Ok(r) if r.exit_code == 0 => ModuleResult::changed("touched"),
+                _ => ModuleResult::failed("failed to touch"),
+            }
+        }
+        _ => ModuleResult::ok("file exists"),
+    }
+}
+
+fn run_template(conn: &Connection, args: &ModuleArgs, vars: &HashMap<String, String>) -> ModuleResult {
+    let src = match args.require("src") {
+        Ok(s) => s.clone(),
+        Err(e) => return ModuleResult::failed(&e),
+    };
+
+    let dest = match args.require("dest") {
+        Ok(d) => d.clone(),
+        Err(e) => return ModuleResult::failed(&e),
+    };
+
+    let mode = args.get_or("mode", "0644");
+    let mode_int = i32::from_str_radix(&mode, 8).unwrap_or(0o644);
+
+    let template_content = match std::fs::read_to_string(&src) {
+        Ok(c) => c,
+        Err(e) => return ModuleResult::failed(&format!("failed to read template: {}", e)),
+    };
+
+    let rendered = template::render(&template_content, vars);
+
+    match conn.read_file(&dest) {
+        Ok(existing) if existing == rendered.as_bytes() => {
+            return ModuleResult::ok("template unchanged");
+        }
+        _ => {}
+    }
+
+    match conn.write_file(&dest, rendered.as_bytes(), mode_int) {
+        Ok(_) => ModuleResult::changed("template rendered"),
+        Err(e) => ModuleResult::failed(&format!("failed to write: {}", e)),
+    }
+}
+
+fn run_apt(conn: &Connection, args: &ModuleArgs) -> ModuleResult {
+    let name = match args.require("name") {
+        Ok(n) => n.clone(),
+        Err(e) => return ModuleResult::failed(&e),
+    };
+
+    let state = args.get_or("state", "present");
+
+    let is_installed = conn
+        .exec(&format!("dpkg-query -W -f='${{Status}}' {} 2>/dev/null | grep -q 'ok installed'", name))
+        .map(|r| r.exit_code == 0)
+        .unwrap_or(false);
+
+    match state.as_str() {
+        "present" | "installed" => {
+            if is_installed {
+                ModuleResult::ok("already installed")
+            } else {
+                match conn.exec(&format!("DEBIAN_FRONTEND=noninteractive apt-get install -y -qq {}", name)) {
+                    Ok(r) if r.exit_code == 0 => ModuleResult::changed("installed"),
+                    Ok(r) => ModuleResult::failed(&r.stderr),
+                    Err(e) => ModuleResult::failed(&format!("{}", e)),
+                }
+            }
+        }
+        "absent" => {
+            if !is_installed {
+                ModuleResult::ok("already absent")
+            } else {
+                match conn.exec(&format!("DEBIAN_FRONTEND=noninteractive apt-get remove -y -qq {}", name)) {
+                    Ok(r) if r.exit_code == 0 => ModuleResult::changed("removed"),
+                    Ok(r) => ModuleResult::failed(&r.stderr),
+                    Err(e) => ModuleResult::failed(&format!("{}", e)),
+                }
+            }
+        }
+        _ => ModuleResult::failed(&format!("unknown state: {}", state)),
+    }
+}
+
+fn run_service(conn: &Connection, args: &ModuleArgs) -> ModuleResult {
+    let name = match args.require("name") {
+        Ok(n) => n.clone(),
+        Err(e) => return ModuleResult::failed(&e),
+    };
+
+    let state = args.get("state");
+
+    if let Some(st) = state {
+        match st.as_str() {
+            "started" => {
+                match conn.exec(&format!("systemctl start {}", name)) {
+                    Ok(r) if r.exit_code == 0 => ModuleResult::changed("started"),
+                    Ok(r) => ModuleResult::failed(&r.stderr),
+                    Err(e) => ModuleResult::failed(&format!("{}", e)),
+                }
+            }
+            "stopped" => {
+                match conn.exec(&format!("systemctl stop {}", name)) {
+                    Ok(r) if r.exit_code == 0 => ModuleResult::changed("stopped"),
+                    Ok(r) => ModuleResult::failed(&r.stderr),
+                    Err(e) => ModuleResult::failed(&format!("{}", e)),
+                }
+            }
+            "restarted" => {
+                match conn.exec(&format!("systemctl restart {}", name)) {
+                    Ok(r) if r.exit_code == 0 => ModuleResult::changed("restarted"),
+                    Ok(r) => ModuleResult::failed(&r.stderr),
+                    Err(e) => ModuleResult::failed(&format!("{}", e)),
+                }
+            }
+            _ => ModuleResult::failed(&format!("unknown state: {}", st)),
+        }
+    } else {
+        ModuleResult::ok("no state specified")
+    }
+}
+
+fn run_lineinfile(conn: &Connection, args: &ModuleArgs) -> ModuleResult {
+    let path = match args.require("path") {
+        Ok(p) => p.clone(),
+        Err(e) => return ModuleResult::failed(&e),
+    };
+
+    let line = match args.require("line") {
+        Ok(l) => l.clone(),
+        Err(e) => return ModuleResult::failed(&e),
+    };
+
+    let content = conn.read_file(&path).unwrap_or_default();
+    let content_str = String::from_utf8_lossy(&content);
+
+    if content_str.lines().any(|l| l == line) {
+        return ModuleResult::ok("line present");
+    }
+
+    let new_content = format!("{}\n{}", content_str.trim_end(), line);
+
+    match conn.write_file(&path, new_content.as_bytes(), 0o644) {
+        Ok(_) => ModuleResult::changed("line added"),
+        Err(e) => ModuleResult::failed(&format!("{}", e)),
     }
 }
 

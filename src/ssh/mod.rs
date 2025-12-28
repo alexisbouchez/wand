@@ -1,8 +1,12 @@
+pub mod local;
+
 use anyhow::{anyhow, Result};
 use ssh2::Session;
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::path::Path;
+
+pub use local::LocalConnection;
 
 pub struct SshConnection {
     session: Session,

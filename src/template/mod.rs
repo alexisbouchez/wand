@@ -1,9 +1,232 @@
 use std::collections::HashMap;
 
 pub fn render(template: &str, vars: &HashMap<String, String>) -> String {
+    let result = process_conditionals(template, vars);
+    let result = process_loops(&result, vars);
+    process_variables(&result, vars)
+}
+
+fn process_conditionals(template: &str, vars: &HashMap<String, String>) -> String {
     let mut result = template.to_string();
 
-    // Handle {{ var }} substitution
+    while let Some(if_start) = result.find("{%") {
+        let after_tag = &result[if_start + 2..];
+        if let Some(tag_end) = after_tag.find("%}") {
+            let tag_content = after_tag[..tag_end].trim();
+
+            if tag_content.starts_with("if ") {
+                let condition = tag_content.strip_prefix("if ").unwrap().trim();
+                let if_end = if_start + 2 + tag_end + 2;
+
+                if let Some(endif_pos) = find_endif(&result[if_end..]) {
+                    let block_content = &result[if_end..if_end + endif_pos];
+                    let endif_end = if_end + endif_pos + find_tag_len(&result[if_end + endif_pos..], "endif");
+
+                    let (if_block, else_block) = split_if_else(block_content);
+
+                    let output = if eval_condition(condition, vars) {
+                        process_conditionals(if_block, vars)
+                    } else {
+                        process_conditionals(else_block, vars)
+                    };
+
+                    result = format!("{}{}{}", &result[..if_start], output, &result[endif_end..]);
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
+        } else {
+            break;
+        }
+    }
+
+    result
+}
+
+fn find_endif(s: &str) -> Option<usize> {
+    let mut depth = 1;
+    let mut pos = 0;
+
+    while pos < s.len() {
+        if let Some(tag_start) = s[pos..].find("{%") {
+            let tag_start = pos + tag_start;
+            if let Some(tag_end) = s[tag_start + 2..].find("%}") {
+                let tag_content = s[tag_start + 2..tag_start + 2 + tag_end].trim();
+                if tag_content.starts_with("if ") {
+                    depth += 1;
+                } else if tag_content == "endif" {
+                    depth -= 1;
+                    if depth == 0 {
+                        return Some(tag_start);
+                    }
+                }
+                pos = tag_start + 2 + tag_end + 2;
+            } else {
+                break;
+            }
+        } else {
+            break;
+        }
+    }
+    None
+}
+
+fn find_tag_len(s: &str, tag: &str) -> usize {
+    if let Some(start) = s.find("{%") {
+        if let Some(end) = s[start + 2..].find("%}") {
+            let content = s[start + 2..start + 2 + end].trim();
+            if content == tag {
+                return start + 2 + end + 2;
+            }
+        }
+    }
+    0
+}
+
+fn split_if_else(block: &str) -> (&str, &str) {
+    let mut depth = 0;
+    let mut pos = 0;
+
+    while pos < block.len() {
+        if let Some(tag_start) = block[pos..].find("{%") {
+            let tag_start = pos + tag_start;
+            if let Some(tag_end) = block[tag_start + 2..].find("%}") {
+                let tag_content = block[tag_start + 2..tag_start + 2 + tag_end].trim();
+                if tag_content.starts_with("if ") {
+                    depth += 1;
+                } else if tag_content == "endif" {
+                    depth -= 1;
+                } else if tag_content == "else" && depth == 0 {
+                    let else_end = tag_start + 2 + tag_end + 2;
+                    return (&block[..tag_start], &block[else_end..]);
+                }
+                pos = tag_start + 2 + tag_end + 2;
+            } else {
+                break;
+            }
+        } else {
+            break;
+        }
+    }
+
+    (block, "")
+}
+
+fn eval_condition(condition: &str, vars: &HashMap<String, String>) -> bool {
+    let condition = condition.trim();
+
+    if let Some((left, right)) = condition.split_once("==") {
+        let left = eval_expr(left.trim(), vars);
+        let right = eval_expr(right.trim(), vars);
+        return left == right;
+    }
+
+    if let Some((left, right)) = condition.split_once("!=") {
+        let left = eval_expr(left.trim(), vars);
+        let right = eval_expr(right.trim(), vars);
+        return left != right;
+    }
+
+    if condition.starts_with("not ") {
+        let inner = condition.strip_prefix("not ").unwrap().trim();
+        return !eval_condition(inner, vars);
+    }
+
+    // Simple truthy check
+    let value = vars.get(condition).cloned().unwrap_or_default();
+    !value.is_empty() && value != "false" && value != "0"
+}
+
+fn eval_expr(expr: &str, vars: &HashMap<String, String>) -> String {
+    let expr = expr.trim();
+    if expr.starts_with('"') || expr.starts_with('\'') {
+        expr.trim_matches(|c| c == '"' || c == '\'').to_string()
+    } else {
+        vars.get(expr).cloned().unwrap_or_default()
+    }
+}
+
+fn process_loops(template: &str, vars: &HashMap<String, String>) -> String {
+    let mut result = template.to_string();
+
+    while let Some(for_start) = result.find("{% for ") {
+        if let Some(tag_end) = result[for_start + 2..].find("%}") {
+            let tag_end = for_start + 2 + tag_end + 2;
+            let tag_content = &result[for_start + 7..tag_end - 2].trim();
+
+            if let Some((var_name, items_expr)) = tag_content.split_once(" in ") {
+                let var_name = var_name.trim();
+                let items_expr = items_expr.trim();
+
+                if let Some(endfor_pos) = find_endfor(&result[tag_end..]) {
+                    let block = &result[tag_end..tag_end + endfor_pos];
+                    let endfor_end = tag_end + endfor_pos + find_tag_len(&result[tag_end + endfor_pos..], "endfor");
+
+                    let items = get_list_items(items_expr, vars);
+                    let mut output = String::new();
+
+                    for item in items {
+                        let mut loop_vars = vars.clone();
+                        loop_vars.insert(var_name.to_string(), item);
+                        output.push_str(&process_variables(block, &loop_vars));
+                    }
+
+                    result = format!("{}{}{}", &result[..for_start], output, &result[endfor_end..]);
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
+        } else {
+            break;
+        }
+    }
+
+    result
+}
+
+fn find_endfor(s: &str) -> Option<usize> {
+    let mut depth = 1;
+    let mut pos = 0;
+
+    while pos < s.len() {
+        if let Some(tag_start) = s[pos..].find("{%") {
+            let tag_start = pos + tag_start;
+            if let Some(tag_end) = s[tag_start + 2..].find("%}") {
+                let tag_content = s[tag_start + 2..tag_start + 2 + tag_end].trim();
+                if tag_content.starts_with("for ") {
+                    depth += 1;
+                } else if tag_content == "endfor" {
+                    depth -= 1;
+                    if depth == 0 {
+                        return Some(tag_start);
+                    }
+                }
+                pos = tag_start + 2 + tag_end + 2;
+            } else {
+                break;
+            }
+        } else {
+            break;
+        }
+    }
+    None
+}
+
+fn get_list_items(expr: &str, vars: &HashMap<String, String>) -> Vec<String> {
+    if let Some(items_str) = vars.get(expr) {
+        items_str.split(',').map(|s| s.trim().to_string()).collect()
+    } else {
+        vec![]
+    }
+}
+
+fn process_variables(template: &str, vars: &HashMap<String, String>) -> String {
+    let mut result = template.to_string();
+
     while let Some(start) = result.find("{{") {
         if let Some(end) = result[start..].find("}}") {
             let end = start + end + 2;
@@ -174,5 +397,60 @@ mod tests {
     fn filter_length() {
         let result = render("{{ name | length }}", &vars(&[("name", "hello")]));
         assert_eq!(result, "5");
+    }
+
+    #[test]
+    fn if_true() {
+        let result = render("{% if enabled %}yes{% endif %}", &vars(&[("enabled", "true")]));
+        assert_eq!(result, "yes");
+    }
+
+    #[test]
+    fn if_false() {
+        let result = render("{% if enabled %}yes{% endif %}", &vars(&[("enabled", "false")]));
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn if_else_true() {
+        let result = render("{% if enabled %}yes{% else %}no{% endif %}", &vars(&[("enabled", "1")]));
+        assert_eq!(result, "yes");
+    }
+
+    #[test]
+    fn if_else_false() {
+        let result = render("{% if enabled %}yes{% else %}no{% endif %}", &vars(&[]));
+        assert_eq!(result, "no");
+    }
+
+    #[test]
+    fn if_equals() {
+        let result = render("{% if os == \"linux\" %}linux{% endif %}", &vars(&[("os", "linux")]));
+        assert_eq!(result, "linux");
+    }
+
+    #[test]
+    fn if_not_equals() {
+        let result = render("{% if os != \"windows\" %}ok{% endif %}", &vars(&[("os", "linux")]));
+        assert_eq!(result, "ok");
+    }
+
+    #[test]
+    fn for_loop() {
+        let result = render("{% for item in items %}{{ item }} {% endfor %}", &vars(&[("items", "a,b,c")]));
+        assert_eq!(result, "a b c ");
+    }
+
+    #[test]
+    fn for_loop_empty() {
+        let result = render("{% for item in items %}{{ item }}{% endfor %}", &vars(&[]));
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn nested_if() {
+        let tpl = "{% if a %}{% if b %}both{% endif %}{% endif %}";
+        let result = render(tpl, &vars(&[("a", "1"), ("b", "1")]));
+        assert_eq!(result, "both");
     }
 }

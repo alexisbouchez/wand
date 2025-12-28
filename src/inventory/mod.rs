@@ -1,5 +1,19 @@
 use std::collections::HashMap;
 
+fn parse_host_line(line: &str) -> (String, HashMap<String, String>) {
+    let mut parts = line.split_whitespace();
+    let host_name = parts.next().unwrap_or("").to_string();
+    let mut vars = HashMap::new();
+
+    for part in parts {
+        if let Some((key, value)) = part.split_once('=') {
+            vars.insert(key.to_string(), value.to_string());
+        }
+    }
+
+    (host_name, vars)
+}
+
 #[derive(Debug, Default, PartialEq)]
 pub struct Inventory {
     pub hosts: HashMap<String, Host>,
@@ -40,24 +54,32 @@ impl Inventory {
                     ..Default::default()
                 });
             } else if let Some(ref group) = current_group {
-                let host_name = line.split_whitespace().next().unwrap_or(line);
+                let (host_name, vars) = parse_host_line(line);
 
-                inventory.hosts.entry(host_name.to_string()).or_insert(Host {
-                    name: host_name.to_string(),
-                    vars: HashMap::new(),
+                inventory.hosts.entry(host_name.clone()).or_insert(Host {
+                    name: host_name.clone(),
+                    vars: vars.clone(),
                 });
 
+                if let Some(host) = inventory.hosts.get_mut(&host_name) {
+                    host.vars.extend(vars);
+                }
+
                 if let Some(g) = inventory.groups.get_mut(group) {
-                    if !g.hosts.contains(&host_name.to_string()) {
-                        g.hosts.push(host_name.to_string());
+                    if !g.hosts.contains(&host_name) {
+                        g.hosts.push(host_name);
                     }
                 }
             } else {
-                let host_name = line.split_whitespace().next().unwrap_or(line);
-                inventory.hosts.entry(host_name.to_string()).or_insert(Host {
-                    name: host_name.to_string(),
-                    vars: HashMap::new(),
+                let (host_name, vars) = parse_host_line(line);
+                inventory.hosts.entry(host_name.clone()).or_insert(Host {
+                    name: host_name.clone(),
+                    vars: vars.clone(),
                 });
+
+                if let Some(host) = inventory.hosts.get_mut(&host_name) {
+                    host.vars.extend(vars);
+                }
 
                 inventory.groups.entry("ungrouped".to_string()).or_insert(Group {
                     name: "ungrouped".to_string(),
@@ -126,5 +148,20 @@ mod tests {
         assert!(inv.groups.contains_key("ungrouped"));
         let group = inv.groups.get("ungrouped").unwrap();
         assert_eq!(group.hosts.len(), 2);
+    }
+
+    #[test]
+    fn parse_host_variables() {
+        let inv = Inventory::from_ini("web1 ansible_host=192.168.1.1 ansible_user=admin");
+        let host = inv.hosts.get("web1").unwrap();
+        assert_eq!(host.vars.get("ansible_host").unwrap(), "192.168.1.1");
+        assert_eq!(host.vars.get("ansible_user").unwrap(), "admin");
+    }
+
+    #[test]
+    fn parse_host_variables_in_group() {
+        let inv = Inventory::from_ini("[web]\nweb1 ansible_port=2222");
+        let host = inv.hosts.get("web1").unwrap();
+        assert_eq!(host.vars.get("ansible_port").unwrap(), "2222");
     }
 }

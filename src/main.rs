@@ -1,4 +1,5 @@
 mod inventory;
+mod modules;
 mod playbook;
 mod ssh;
 mod template;

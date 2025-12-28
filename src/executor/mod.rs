@@ -45,7 +45,7 @@ impl Connection {
 #[derive(Debug)]
 pub struct Executor {
     inventory: Inventory,
-    vars: HashMap<String, String>,
+    extra_vars: HashMap<String, String>,
     check_mode: bool,
     diff_mode: bool,
     forks: usize,
@@ -72,7 +72,7 @@ impl Executor {
     pub fn new(inventory: Inventory) -> Self {
         Self {
             inventory,
-            vars: HashMap::new(),
+            extra_vars: HashMap::new(),
             check_mode: false,
             diff_mode: false,
             forks: 5,
@@ -80,7 +80,7 @@ impl Executor {
     }
 
     pub fn with_vars(mut self, vars: HashMap<String, String>) -> Self {
-        self.vars = vars;
+        self.extra_vars = vars;
         self
     }
 
@@ -190,19 +190,26 @@ impl Executor {
             }
         };
 
-        // Build variables for this host
-        let mut host_vars = self.vars.clone();
+        // Build variables for this host (order matters for precedence)
+        let mut host_vars = HashMap::new();
+
+        // 1. Host vars from inventory (lowest precedence)
         host_vars.insert("inventory_hostname".to_string(), host_name.to_string());
         host_vars.insert("ansible_host".to_string(), host.vars.get("ansible_host").unwrap_or(&host.name).clone());
         for (k, v) in &host.vars {
             host_vars.insert(k.clone(), v.clone());
         }
 
-        // Add play vars
+        // 2. Play vars
         for (k, v) in &play.vars {
             if let Some(s) = v.as_str() {
                 host_vars.insert(k.clone(), s.to_string());
             }
+        }
+
+        // 3. Extra vars (highest precedence)
+        for (k, v) in &self.extra_vars {
+            host_vars.insert(k.clone(), v.clone());
         }
 
         // Track notified handlers

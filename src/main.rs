@@ -49,6 +49,10 @@ struct Cli {
     #[arg(short, long, default_value = "5")]
     forks: usize,
 
+    /// Extra variables (key=value format)
+    #[arg(short = 'e', long = "extra-vars")]
+    extra_vars: Vec<String>,
+
     /// Verbosity level
     #[arg(short, long, action = clap::ArgAction::Count)]
     verbose: u8,
@@ -75,8 +79,17 @@ fn main() -> Result<()> {
         Auth::agent()
     };
 
+    // Parse extra vars
+    let mut extra_vars = std::collections::HashMap::new();
+    for var in &cli.extra_vars {
+        if let Some((key, value)) = var.split_once('=') {
+            extra_vars.insert(key.to_string(), value.to_string());
+        }
+    }
+
     // Create executor
     let executor = Executor::new(inventory)
+        .with_vars(extra_vars)
         .check_mode(cli.check)
         .diff_mode(cli.diff)
         .forks(cli.forks);

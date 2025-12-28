@@ -7,6 +7,7 @@ mod template;
 
 use anyhow::{Context, Result};
 use clap::Parser;
+use colored::Colorize;
 use executor::Executor;
 use inventory::Inventory;
 use ssh::Auth;
@@ -83,7 +84,7 @@ fn main() -> Result<()> {
     // Print header
     println!();
     if cli.check {
-        println!("CHECK MODE - no changes will be made");
+        println!("{}", "CHECK MODE - no changes will be made".yellow().bold());
         println!();
     }
 
@@ -93,36 +94,43 @@ fn main() -> Result<()> {
 
     // Run plays
     for play in &plays {
-        println!("PLAY [{}] {}", play.hosts, "*".repeat(60));
+        println!(
+            "{} [{}] {}",
+            "PLAY".bold(),
+            play.hosts.cyan(),
+            "*".repeat(50)
+        );
         println!();
 
         let results = executor.run_play(play, &auth);
 
         for result in &results {
             for task_result in &result.task_results {
-                let status = if task_result.result.failed {
-                    "FAILED"
+                let (status, color_status) = if task_result.result.failed {
+                    ("FAILED", "FAILED".red().bold())
                 } else if task_result.result.changed {
-                    "CHANGED"
+                    ("CHANGED", "CHANGED".yellow().bold())
                 } else {
-                    "OK"
+                    ("OK", "OK".green().bold())
                 };
 
                 println!(
                     "{}: [{}] => {}",
-                    status, result.host, task_result.task_name
+                    color_status,
+                    result.host.cyan(),
+                    task_result.task_name
                 );
 
                 if cli.verbose > 0 && !task_result.result.stdout.is_empty() {
-                    println!("  stdout: {}", task_result.result.stdout.trim());
+                    println!("  {}: {}", "stdout".dimmed(), task_result.result.stdout.trim());
                 }
 
-                if task_result.result.failed || cli.verbose > 0 {
+                if status == "FAILED" || cli.verbose > 0 {
                     if !task_result.result.stderr.is_empty() {
-                        println!("  stderr: {}", task_result.result.stderr.trim());
+                        println!("  {}: {}", "stderr".red(), task_result.result.stderr.trim());
                     }
                     if !task_result.result.msg.is_empty() {
-                        println!("  msg: {}", task_result.result.msg);
+                        println!("  {}: {}", "msg".dimmed(), task_result.result.msg);
                     }
                 }
             }
@@ -136,11 +144,10 @@ fn main() -> Result<()> {
     }
 
     // Print recap
-    println!("PLAY RECAP {}", "*".repeat(60));
-    println!(
-        "ok={} changed={} failed={}",
-        total_ok, total_changed, total_failed
-    );
+    println!("{} {}", "PLAY RECAP".bold(), "*".repeat(50));
+    print!("{}={} ", "ok".green(), total_ok);
+    print!("{}={} ", "changed".yellow(), total_changed);
+    println!("{}={}", "failed".red(), total_failed);
 
     if total_failed > 0 {
         std::process::exit(1);

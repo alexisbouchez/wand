@@ -1,3 +1,4 @@
+mod executor;
 mod inventory;
 mod modules;
 mod playbook;

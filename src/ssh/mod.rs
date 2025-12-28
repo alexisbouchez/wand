@@ -149,6 +149,7 @@ impl SshConnection {
     }
 }
 
+#[derive(Clone)]
 pub enum Auth {
     Key {
         private_key: String,

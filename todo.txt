@@ -15,16 +15,16 @@ PHASE 1: PROJECT SETUP
 
 PHASE 2: INVENTORY PARSING
 --------------------------
-[ ] Parse INI inventory file (hosts only)
-[ ] Parse INI inventory with groups
-[ ] Parse INI inventory with host variables
-[ ] Parse INI inventory with group variables
+[x] Parse INI inventory file (hosts only)
+[x] Parse INI inventory with groups
+[x] Parse INI inventory with host variables
+[x] Parse INI inventory with group variables
 [ ] Parse YAML inventory file
 [ ] Support [all] and [ungrouped] special groups
-[ ] Support group children (:children suffix)
-[ ] Support host ranges (web[1:10].example.com)
+[x] Support group children (:children suffix)
+[x] Support host ranges (web[1:10].example.com)
 [ ] Inventory struct with query methods
-[ ] Tests for all inventory formats
+[x] Tests for all inventory formats
 
 PHASE 3: PLAYBOOK PARSING
 -------------------------

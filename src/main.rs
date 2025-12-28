@@ -1,4 +1,5 @@
 mod inventory;
+mod playbook;
 
 use anyhow::Result;
 use clap::Parser;

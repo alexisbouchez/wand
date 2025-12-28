@@ -1,5 +1,6 @@
 mod inventory;
 mod playbook;
+mod ssh;
 mod template;
 
 use anyhow::Result;

@@ -47,27 +47,50 @@ impl Inventory {
             }
 
             if line.starts_with('[') && line.ends_with(']') {
-                let group_name = &line[1..line.len() - 1];
-                current_group = Some(group_name.to_string());
-                inventory.groups.entry(group_name.to_string()).or_insert(Group {
-                    name: group_name.to_string(),
-                    ..Default::default()
-                });
-            } else if let Some(ref group) = current_group {
-                let (host_name, vars) = parse_host_line(line);
+                let group_spec = &line[1..line.len() - 1];
 
-                inventory.hosts.entry(host_name.clone()).or_insert(Host {
-                    name: host_name.clone(),
-                    vars: vars.clone(),
-                });
-
-                if let Some(host) = inventory.hosts.get_mut(&host_name) {
-                    host.vars.extend(vars);
+                if let Some((group_name, suffix)) = group_spec.split_once(':') {
+                    current_group = Some(format!("{}:{}", group_name, suffix));
+                    inventory.groups.entry(group_name.to_string()).or_insert(Group {
+                        name: group_name.to_string(),
+                        ..Default::default()
+                    });
+                } else {
+                    current_group = Some(group_spec.to_string());
+                    inventory.groups.entry(group_spec.to_string()).or_insert(Group {
+                        name: group_spec.to_string(),
+                        ..Default::default()
+                    });
                 }
+            } else if let Some(ref group) = current_group {
+                if group.ends_with(":vars") {
+                    let group_name = group.strip_suffix(":vars").unwrap();
+                    if let Some((key, value)) = line.split_once('=') {
+                        if let Some(g) = inventory.groups.get_mut(group_name) {
+                            g.vars.insert(key.trim().to_string(), value.trim().to_string());
+                        }
+                    }
+                } else if group.ends_with(":children") {
+                    let group_name = group.strip_suffix(":children").unwrap();
+                    if let Some(g) = inventory.groups.get_mut(group_name) {
+                        g.children.push(line.to_string());
+                    }
+                } else {
+                    let (host_name, vars) = parse_host_line(line);
 
-                if let Some(g) = inventory.groups.get_mut(group) {
-                    if !g.hosts.contains(&host_name) {
-                        g.hosts.push(host_name);
+                    inventory.hosts.entry(host_name.clone()).or_insert(Host {
+                        name: host_name.clone(),
+                        vars: vars.clone(),
+                    });
+
+                    if let Some(host) = inventory.hosts.get_mut(&host_name) {
+                        host.vars.extend(vars);
+                    }
+
+                    if let Some(g) = inventory.groups.get_mut(group) {
+                        if !g.hosts.contains(&host_name) {
+                            g.hosts.push(host_name);
+                        }
                     }
                 }
             } else {
@@ -163,5 +186,21 @@ mod tests {
         let inv = Inventory::from_ini("[web]\nweb1 ansible_port=2222");
         let host = inv.hosts.get("web1").unwrap();
         assert_eq!(host.vars.get("ansible_port").unwrap(), "2222");
+    }
+
+    #[test]
+    fn parse_group_variables() {
+        let inv = Inventory::from_ini("[web]\nweb1\n\n[web:vars]\nhttp_port=80\nmax_clients=200");
+        let group = inv.groups.get("web").unwrap();
+        assert_eq!(group.vars.get("http_port").unwrap(), "80");
+        assert_eq!(group.vars.get("max_clients").unwrap(), "200");
+    }
+
+    #[test]
+    fn parse_group_children() {
+        let inv = Inventory::from_ini("[web]\nweb1\n\n[db]\ndb1\n\n[all:children]\nweb\ndb");
+        let group = inv.groups.get("all").unwrap();
+        assert!(group.children.contains(&"web".to_string()));
+        assert!(group.children.contains(&"db".to_string()));
     }
 }

@@ -102,7 +102,8 @@ fn main() -> Result<()> {
         .diff_mode(cli.diff)
         .forks(cli.forks)
         .tags(cli.tags)
-        .skip_tags(cli.skip_tags);
+        .skip_tags(cli.skip_tags)
+        .limit(cli.limit);
 
     // Print header
     println!();

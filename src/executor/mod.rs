@@ -51,6 +51,7 @@ pub struct Executor {
     forks: usize,
     tags: HashSet<String>,
     skip_tags: HashSet<String>,
+    limit: Option<String>,
 }
 
 #[derive(Debug, Default)]
@@ -80,6 +81,7 @@ impl Executor {
             forks: 5,
             tags: HashSet::new(),
             skip_tags: HashSet::new(),
+            limit: None,
         }
     }
 
@@ -110,6 +112,11 @@ impl Executor {
 
     pub fn skip_tags(mut self, tags: Vec<String>) -> Self {
         self.skip_tags = tags.into_iter().collect();
+        self
+    }
+
+    pub fn limit(mut self, pattern: Option<String>) -> Self {
+        self.limit = pattern;
         self
     }
 
@@ -161,6 +168,18 @@ impl Executor {
     }
 
     fn resolve_hosts(&self, pattern: &str) -> Vec<String> {
+        let mut hosts = self.resolve_pattern(pattern);
+
+        // Apply limit filter if set
+        if let Some(limit) = &self.limit {
+            let limit_hosts = self.resolve_limit(limit);
+            hosts.retain(|h| limit_hosts.contains(h));
+        }
+
+        hosts
+    }
+
+    fn resolve_pattern(&self, pattern: &str) -> Vec<String> {
         if pattern == "all" {
             return self.inventory.hosts.keys().cloned().collect();
         }
@@ -185,6 +204,79 @@ impl Executor {
             .map(|s| s.trim().to_string())
             .filter(|h| self.inventory.hosts.contains_key(h))
             .collect()
+    }
+
+    fn resolve_limit(&self, limit: &str) -> HashSet<String> {
+        let mut included: HashSet<String> = HashSet::new();
+        let mut excluded: HashSet<String> = HashSet::new();
+
+        for part in limit.split(':') {
+            let part = part.trim();
+            if part.is_empty() {
+                continue;
+            }
+
+            if let Some(negated) = part.strip_prefix('!') {
+                // Exclusion pattern
+                for host in self.expand_limit_pattern(negated) {
+                    excluded.insert(host);
+                }
+            } else {
+                // Inclusion pattern
+                for host in self.expand_limit_pattern(part) {
+                    included.insert(host);
+                }
+            }
+        }
+
+        // If no inclusions specified, start with all hosts
+        if included.is_empty() {
+            included = self.inventory.hosts.keys().cloned().collect();
+        }
+
+        // Remove excluded hosts
+        for host in &excluded {
+            included.remove(host);
+        }
+
+        included
+    }
+
+    fn expand_limit_pattern(&self, pattern: &str) -> Vec<String> {
+        // Check if it's a group
+        if let Some(group) = self.inventory.groups.get(pattern) {
+            return group.hosts.clone();
+        }
+
+        // Check for wildcard pattern
+        if pattern.contains('*') {
+            let regex_pattern = format!("^{}$", pattern.replace('*', ".*"));
+            if let Ok(re) = regex::Regex::new(&regex_pattern) {
+                return self
+                    .inventory
+                    .hosts
+                    .keys()
+                    .filter(|h| re.is_match(h))
+                    .cloned()
+                    .collect();
+            }
+        }
+
+        // Check if it's a comma-separated list
+        if pattern.contains(',') {
+            return pattern
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|h| self.inventory.hosts.contains_key(h))
+                .collect();
+        }
+
+        // Single host
+        if self.inventory.hosts.contains_key(pattern) {
+            return vec![pattern.to_string()];
+        }
+
+        vec![]
     }
 
     fn run_play_on_host(&self, play: &Play, host_name: &str, auth: &Auth) -> PlayResult {
@@ -832,5 +924,85 @@ mod tests {
         assert_eq!(result.ok, 0);
         assert_eq!(result.changed, 0);
         assert_eq!(result.failed, 0);
+    }
+
+    #[test]
+    fn limit_single_host() {
+        let mut inv = Inventory::default();
+        inv.hosts.insert("host1".to_string(), crate::inventory::Host {
+            name: "host1".to_string(),
+            vars: HashMap::new(),
+        });
+        inv.hosts.insert("host2".to_string(), crate::inventory::Host {
+            name: "host2".to_string(),
+            vars: HashMap::new(),
+        });
+
+        let exec = Executor::new(inv).limit(Some("host1".to_string()));
+        let hosts = exec.resolve_hosts("all");
+        assert_eq!(hosts, vec!["host1".to_string()]);
+    }
+
+    #[test]
+    fn limit_multiple_hosts() {
+        let mut inv = Inventory::default();
+        inv.hosts.insert("host1".to_string(), crate::inventory::Host {
+            name: "host1".to_string(),
+            vars: HashMap::new(),
+        });
+        inv.hosts.insert("host2".to_string(), crate::inventory::Host {
+            name: "host2".to_string(),
+            vars: HashMap::new(),
+        });
+        inv.hosts.insert("host3".to_string(), crate::inventory::Host {
+            name: "host3".to_string(),
+            vars: HashMap::new(),
+        });
+
+        let exec = Executor::new(inv).limit(Some("host1,host2".to_string()));
+        let mut hosts = exec.resolve_hosts("all");
+        hosts.sort();
+        assert_eq!(hosts, vec!["host1".to_string(), "host2".to_string()]);
+    }
+
+    #[test]
+    fn limit_exclusion() {
+        let mut inv = Inventory::default();
+        inv.hosts.insert("host1".to_string(), crate::inventory::Host {
+            name: "host1".to_string(),
+            vars: HashMap::new(),
+        });
+        inv.hosts.insert("host2".to_string(), crate::inventory::Host {
+            name: "host2".to_string(),
+            vars: HashMap::new(),
+        });
+
+        let exec = Executor::new(inv).limit(Some("!host1".to_string()));
+        let hosts = exec.resolve_hosts("all");
+        assert_eq!(hosts, vec!["host2".to_string()]);
+    }
+
+    #[test]
+    fn limit_with_group() {
+        let mut inv = Inventory::default();
+        inv.hosts.insert("web1".to_string(), crate::inventory::Host {
+            name: "web1".to_string(),
+            vars: HashMap::new(),
+        });
+        inv.hosts.insert("web2".to_string(), crate::inventory::Host {
+            name: "web2".to_string(),
+            vars: HashMap::new(),
+        });
+        inv.groups.insert("webservers".to_string(), crate::inventory::Group {
+            name: "webservers".to_string(),
+            hosts: vec!["web1".to_string(), "web2".to_string()],
+            children: vec![],
+            vars: HashMap::new(),
+        });
+
+        let exec = Executor::new(inv).limit(Some("webservers".to_string()));
+        let mut hosts = exec.resolve_hosts("all");
+        hosts.sort();
+        assert_eq!(hosts, vec!["web1".to_string(), "web2".to_string()]);
     }
 }

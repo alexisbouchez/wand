@@ -1,8 +1,34 @@
 use std::collections::HashMap;
 
-fn parse_host_line(line: &str) -> (String, HashMap<String, String>) {
+fn expand_host_pattern(pattern: &str) -> Vec<String> {
+    if let Some(start) = pattern.find('[') {
+        if let Some(end) = pattern.find(']') {
+            let prefix = &pattern[..start];
+            let suffix = &pattern[end + 1..];
+            let range_spec = &pattern[start + 1..end];
+
+            if let Some((from, to)) = range_spec.split_once(':') {
+                if let (Ok(from_num), Ok(to_num)) = (from.parse::<u32>(), to.parse::<u32>()) {
+                    let width = from.len();
+                    return (from_num..=to_num)
+                        .map(|n| format!("{}{:0width$}{}", prefix, n, suffix, width = width))
+                        .collect();
+                } else if from.len() == 1 && to.len() == 1 {
+                    let from_char = from.chars().next().unwrap();
+                    let to_char = to.chars().next().unwrap();
+                    return (from_char..=to_char)
+                        .map(|c| format!("{}{}{}", prefix, c, suffix))
+                        .collect();
+                }
+            }
+        }
+    }
+    vec![pattern.to_string()]
+}
+
+fn parse_host_line(line: &str) -> (Vec<String>, HashMap<String, String>) {
     let mut parts = line.split_whitespace();
-    let host_name = parts.next().unwrap_or("").to_string();
+    let host_pattern = parts.next().unwrap_or("").to_string();
     let mut vars = HashMap::new();
 
     for part in parts {
@@ -11,7 +37,8 @@ fn parse_host_line(line: &str) -> (String, HashMap<String, String>) {
         }
     }
 
-    (host_name, vars)
+    let hosts = expand_host_pattern(&host_pattern);
+    (hosts, vars)
 }
 
 #[derive(Debug, Default, PartialEq)]
@@ -76,42 +103,47 @@ impl Inventory {
                         g.children.push(line.to_string());
                     }
                 } else {
-                    let (host_name, vars) = parse_host_line(line);
+                    let (host_names, vars) = parse_host_line(line);
 
+                    for host_name in host_names {
+                        inventory.hosts.entry(host_name.clone()).or_insert(Host {
+                            name: host_name.clone(),
+                            vars: vars.clone(),
+                        });
+
+                        if let Some(host) = inventory.hosts.get_mut(&host_name) {
+                            host.vars.extend(vars.clone());
+                        }
+
+                        if let Some(g) = inventory.groups.get_mut(group) {
+                            if !g.hosts.contains(&host_name) {
+                                g.hosts.push(host_name);
+                            }
+                        }
+                    }
+                }
+            } else {
+                let (host_names, vars) = parse_host_line(line);
+
+                for host_name in host_names {
                     inventory.hosts.entry(host_name.clone()).or_insert(Host {
                         name: host_name.clone(),
                         vars: vars.clone(),
                     });
 
                     if let Some(host) = inventory.hosts.get_mut(&host_name) {
-                        host.vars.extend(vars);
+                        host.vars.extend(vars.clone());
                     }
 
-                    if let Some(g) = inventory.groups.get_mut(group) {
+                    inventory.groups.entry("ungrouped".to_string()).or_insert(Group {
+                        name: "ungrouped".to_string(),
+                        ..Default::default()
+                    });
+
+                    if let Some(g) = inventory.groups.get_mut("ungrouped") {
                         if !g.hosts.contains(&host_name) {
                             g.hosts.push(host_name);
                         }
-                    }
-                }
-            } else {
-                let (host_name, vars) = parse_host_line(line);
-                inventory.hosts.entry(host_name.clone()).or_insert(Host {
-                    name: host_name.clone(),
-                    vars: vars.clone(),
-                });
-
-                if let Some(host) = inventory.hosts.get_mut(&host_name) {
-                    host.vars.extend(vars);
-                }
-
-                inventory.groups.entry("ungrouped".to_string()).or_insert(Group {
-                    name: "ungrouped".to_string(),
-                    ..Default::default()
-                });
-
-                if let Some(g) = inventory.groups.get_mut("ungrouped") {
-                    if !g.hosts.contains(&host_name.to_string()) {
-                        g.hosts.push(host_name.to_string());
                     }
                 }
             }
@@ -202,5 +234,31 @@ mod tests {
         let group = inv.groups.get("all").unwrap();
         assert!(group.children.contains(&"web".to_string()));
         assert!(group.children.contains(&"db".to_string()));
+    }
+
+    #[test]
+    fn parse_host_range_numeric() {
+        let inv = Inventory::from_ini("web[1:3].example.com");
+        assert!(inv.hosts.contains_key("web1.example.com"));
+        assert!(inv.hosts.contains_key("web2.example.com"));
+        assert!(inv.hosts.contains_key("web3.example.com"));
+        assert_eq!(inv.hosts.len(), 3);
+    }
+
+    #[test]
+    fn parse_host_range_alpha() {
+        let inv = Inventory::from_ini("db[a:c].local");
+        assert!(inv.hosts.contains_key("dba.local"));
+        assert!(inv.hosts.contains_key("dbb.local"));
+        assert!(inv.hosts.contains_key("dbc.local"));
+        assert_eq!(inv.hosts.len(), 3);
+    }
+
+    #[test]
+    fn parse_host_range_padded() {
+        let inv = Inventory::from_ini("web[01:03].example.com");
+        assert!(inv.hosts.contains_key("web01.example.com"));
+        assert!(inv.hosts.contains_key("web02.example.com"));
+        assert!(inv.hosts.contains_key("web03.example.com"));
     }
 }

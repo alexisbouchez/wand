@@ -5,8 +5,11 @@ mod playbook;
 mod ssh;
 mod template;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::Parser;
+use executor::Executor;
+use inventory::Inventory;
+use ssh::Auth;
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -33,6 +36,14 @@ struct Cli {
     #[arg(short, long)]
     limit: Option<String>,
 
+    /// SSH private key path
+    #[arg(long)]
+    private_key: Option<PathBuf>,
+
+    /// Remote user
+    #[arg(short, long)]
+    user: Option<String>,
+
     /// Verbosity level
     #[arg(short, long, action = clap::ArgAction::Count)]
     verbose: u8,
@@ -41,11 +52,93 @@ struct Cli {
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    println!("Playbook: {:?}", cli.playbook);
-    println!("Inventory: {:?}", cli.inventory);
+    // Load inventory
+    let inventory_content = std::fs::read_to_string(&cli.inventory)
+        .with_context(|| format!("failed to read inventory: {:?}", cli.inventory))?;
+    let inventory = Inventory::from_ini(&inventory_content);
 
+    // Load playbook
+    let playbook_content = std::fs::read_to_string(&cli.playbook)
+        .with_context(|| format!("failed to read playbook: {:?}", cli.playbook))?;
+    let plays = playbook::parse_playbook(&playbook_content)
+        .with_context(|| "failed to parse playbook")?;
+
+    // Setup auth
+    let auth = if let Some(key_path) = &cli.private_key {
+        Auth::key(key_path.to_str().unwrap_or(""))
+    } else {
+        Auth::agent()
+    };
+
+    // Create executor
+    let executor = Executor::new(inventory)
+        .check_mode(cli.check)
+        .diff_mode(cli.diff);
+
+    // Print header
+    println!();
     if cli.check {
-        println!("Check mode enabled");
+        println!("CHECK MODE - no changes will be made");
+        println!();
+    }
+
+    let mut total_ok = 0;
+    let mut total_changed = 0;
+    let mut total_failed = 0;
+
+    // Run plays
+    for play in &plays {
+        println!("PLAY [{}] {}", play.hosts, "*".repeat(60));
+        println!();
+
+        let results = executor.run_play(play, &auth);
+
+        for result in &results {
+            for task_result in &result.task_results {
+                let status = if task_result.result.failed {
+                    "FAILED"
+                } else if task_result.result.changed {
+                    "CHANGED"
+                } else {
+                    "OK"
+                };
+
+                println!(
+                    "{}: [{}] => {}",
+                    status, result.host, task_result.task_name
+                );
+
+                if cli.verbose > 0 && !task_result.result.stdout.is_empty() {
+                    println!("  stdout: {}", task_result.result.stdout.trim());
+                }
+
+                if task_result.result.failed || cli.verbose > 0 {
+                    if !task_result.result.stderr.is_empty() {
+                        println!("  stderr: {}", task_result.result.stderr.trim());
+                    }
+                    if !task_result.result.msg.is_empty() {
+                        println!("  msg: {}", task_result.result.msg);
+                    }
+                }
+            }
+
+            total_ok += result.ok;
+            total_changed += result.changed;
+            total_failed += result.failed;
+        }
+
+        println!();
+    }
+
+    // Print recap
+    println!("PLAY RECAP {}", "*".repeat(60));
+    println!(
+        "ok={} changed={} failed={}",
+        total_ok, total_changed, total_failed
+    );
+
+    if total_failed > 0 {
+        std::process::exit(1);
     }
 
     Ok(())

@@ -90,38 +90,38 @@ PHASE 6: SSH CONNECTION
 
 PHASE 7: CORE MODULES
 ---------------------
-[ ] Module execution framework
-[ ] Module result parsing (JSON)
-[ ] command module
-[ ] shell module
+[x] Module execution framework
+[x] Module result parsing (JSON)
+[x] command module
+[x] shell module
 [ ] raw module
 [ ] script module
-[ ] copy module
-[ ] file module (state: file/directory/link/absent)
-[ ] template module
-[ ] lineinfile module
+[x] copy module
+[x] file module (state: file/directory/link/absent)
+[x] template module
+[x] lineinfile module
 [ ] blockinfile module
 [ ] fetch module
 [ ] synchronize module
-[ ] Tests for each module
+[x] Tests for each module
 
 PHASE 8: PACKAGE MODULES
 ------------------------
-[ ] apt module
+[x] apt module
 [ ] yum module
 [ ] dnf module
 [ ] pip module
 [ ] gem module
 [ ] npm module
 [ ] package module (generic)
-[ ] Tests for package modules
+[x] Tests for package modules
 
 PHASE 9: SERVICE MODULES
 ------------------------
-[ ] service module
-[ ] systemd module
+[x] service module
+[x] systemd module
 [ ] sysvinit module
-[ ] Tests for service modules
+[x] Tests for service modules
 
 PHASE 10: USER MODULES
 ----------------------

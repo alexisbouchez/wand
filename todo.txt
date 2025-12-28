@@ -62,18 +62,18 @@ PHASE 4: VARIABLE SYSTEM
 
 PHASE 5: TEMPLATE ENGINE
 ------------------------
-[ ] Basic variable substitution {{ var }}
-[ ] Filters: default
-[ ] Filters: lower, upper, capitalize
-[ ] Filters: replace, regex_replace
+[x] Basic variable substitution {{ var }}
+[x] Filters: default
+[x] Filters: lower, upper, capitalize
+[x] Filters: replace, regex_replace
 [ ] Filters: join, split
 [ ] Filters: to_json, to_yaml
 [ ] Filters: basename, dirname
-[ ] Conditionals: {% if %}
-[ ] Loops: {% for %}
+[x] Conditionals: {% if %}
+[x] Loops: {% for %}
 [ ] Comments: {# #}
 [ ] Template file processing
-[ ] Tests for templating
+[x] Tests for templating
 
 PHASE 6: SSH CONNECTION
 -----------------------

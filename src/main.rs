@@ -44,6 +44,10 @@ struct Cli {
     #[arg(short, long)]
     user: Option<String>,
 
+    /// Number of parallel processes (default: 5)
+    #[arg(short, long, default_value = "5")]
+    forks: usize,
+
     /// Verbosity level
     #[arg(short, long, action = clap::ArgAction::Count)]
     verbose: u8,
@@ -73,7 +77,8 @@ fn main() -> Result<()> {
     // Create executor
     let executor = Executor::new(inventory)
         .check_mode(cli.check)
-        .diff_mode(cli.diff);
+        .diff_mode(cli.diff)
+        .forks(cli.forks);
 
     // Print header
     println!();

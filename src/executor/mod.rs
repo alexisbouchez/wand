@@ -4,6 +4,7 @@ use crate::playbook::{Play, Task};
 use crate::ssh::{Auth, CommandResult, LocalConnection, SshConnection};
 use crate::template;
 use anyhow::Result;
+use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
 
 pub enum Connection {
@@ -47,6 +48,7 @@ pub struct Executor {
     vars: HashMap<String, String>,
     check_mode: bool,
     diff_mode: bool,
+    forks: usize,
 }
 
 #[derive(Debug, Default)]
@@ -73,6 +75,7 @@ impl Executor {
             vars: HashMap::new(),
             check_mode: false,
             diff_mode: false,
+            forks: 5,
         }
     }
 
@@ -91,16 +94,26 @@ impl Executor {
         self
     }
 
+    pub fn forks(mut self, n: usize) -> Self {
+        self.forks = n.max(1);
+        self
+    }
+
     pub fn run_play(&self, play: &Play, auth: &Auth) -> Vec<PlayResult> {
         let hosts = self.resolve_hosts(&play.hosts);
-        let mut results = Vec::new();
 
-        for host_name in hosts {
-            let result = self.run_play_on_host(play, &host_name, auth);
-            results.push(result);
-        }
+        // Build a thread pool with forks threads
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(self.forks)
+            .build()
+            .unwrap();
 
-        results
+        pool.install(|| {
+            hosts
+                .par_iter()
+                .map(|host_name| self.run_play_on_host(play, host_name, auth))
+                .collect()
+        })
     }
 
     fn resolve_hosts(&self, pattern: &str) -> Vec<String> {

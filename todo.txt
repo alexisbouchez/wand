@@ -132,11 +132,11 @@ PHASE 10: USER MODULES
 
 PHASE 11: EXECUTION ENGINE
 --------------------------
-[ ] Sequential task execution
-[ ] Host loop execution
+[x] Sequential task execution
+[x] Host loop execution
 [ ] Parallel host execution
-[ ] Handler execution (at end of play)
-[ ] Handler notification deduplication
+[x] Handler execution (at end of play)
+[x] Handler notification deduplication
 [ ] Block/rescue/always support
 [ ] Failed_when support
 [ ] Changed_when support
@@ -147,15 +147,15 @@ PHASE 11: EXECUTION ENGINE
 [ ] Throttle support
 [ ] Run_once support
 [ ] Delegate_to support
-[ ] Tests for execution engine
+[x] Tests for execution engine
 
 PHASE 12: CHECK MODE
 --------------------
-[ ] Check mode flag (--check)
-[ ] Module check mode support
-[ ] Diff mode flag (--diff)
+[x] Check mode flag (--check)
+[x] Module check mode support
+[x] Diff mode flag (--diff)
 [ ] Diff output formatting
-[ ] Tests for check mode
+[x] Tests for check mode
 
 PHASE 13: VAULT
 ---------------

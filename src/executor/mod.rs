@@ -49,6 +49,8 @@ pub struct Executor {
     check_mode: bool,
     diff_mode: bool,
     forks: usize,
+    tags: HashSet<String>,
+    skip_tags: HashSet<String>,
 }
 
 #[derive(Debug, Default)]
@@ -76,6 +78,8 @@ impl Executor {
             check_mode: false,
             diff_mode: false,
             forks: 5,
+            tags: HashSet::new(),
+            skip_tags: HashSet::new(),
         }
     }
 
@@ -97,6 +101,46 @@ impl Executor {
     pub fn forks(mut self, n: usize) -> Self {
         self.forks = n.max(1);
         self
+    }
+
+    pub fn tags(mut self, tags: Vec<String>) -> Self {
+        self.tags = tags.into_iter().collect();
+        self
+    }
+
+    pub fn skip_tags(mut self, tags: Vec<String>) -> Self {
+        self.skip_tags = tags.into_iter().collect();
+        self
+    }
+
+    fn should_run_task(&self, task: &Task) -> bool {
+        // If skip_tags is set and task has any of those tags, skip it
+        if !self.skip_tags.is_empty() {
+            for tag in &task.tags {
+                if self.skip_tags.contains(tag) {
+                    return false;
+                }
+            }
+        }
+
+        // If tags is set, task must have at least one of those tags
+        if !self.tags.is_empty() {
+            // "always" tag always runs
+            if task.tags.contains(&"always".to_string()) {
+                return true;
+            }
+            // Check if any task tag matches
+            for tag in &task.tags {
+                if self.tags.contains(tag) {
+                    return true;
+                }
+            }
+            // No matching tags found
+            return false;
+        }
+
+        // No tag filtering, run the task
+        true
     }
 
     pub fn run_play(&self, play: &Play, auth: &Auth) -> Vec<PlayResult> {
@@ -217,6 +261,18 @@ impl Executor {
 
         // Execute tasks
         for task in &play.tasks {
+            // Check if task should run based on tags
+            if !self.should_run_task(task) {
+                let task_name = task.name.clone().unwrap_or_else(|| "unnamed".to_string());
+                result.skipped += 1;
+                result.task_results.push(TaskResult {
+                    task_name,
+                    host: conn.host().to_string(),
+                    result: ModuleResult::ok("skipped (tags)"),
+                });
+                continue;
+            }
+
             let task_result = self.run_task(&conn, task, &mut host_vars, &mut notified_handlers);
 
             match &task_result.result {

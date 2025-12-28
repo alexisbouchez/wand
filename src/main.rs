@@ -53,6 +53,14 @@ struct Cli {
     #[arg(short = 'e', long = "extra-vars")]
     extra_vars: Vec<String>,
 
+    /// Only run tasks with these tags
+    #[arg(short = 't', long)]
+    tags: Vec<String>,
+
+    /// Skip tasks with these tags
+    #[arg(long)]
+    skip_tags: Vec<String>,
+
     /// Verbosity level
     #[arg(short, long, action = clap::ArgAction::Count)]
     verbose: u8,
@@ -92,7 +100,9 @@ fn main() -> Result<()> {
         .with_vars(extra_vars)
         .check_mode(cli.check)
         .diff_mode(cli.diff)
-        .forks(cli.forks);
+        .forks(cli.forks)
+        .tags(cli.tags)
+        .skip_tags(cli.skip_tags);
 
     // Print header
     println!();
@@ -104,6 +114,7 @@ fn main() -> Result<()> {
     let mut total_ok = 0;
     let mut total_changed = 0;
     let mut total_failed = 0;
+    let mut total_skipped = 0;
 
     // Run plays
     for play in &plays {
@@ -119,8 +130,11 @@ fn main() -> Result<()> {
 
         for result in &results {
             for task_result in &result.task_results {
+                let is_skipped = task_result.result.msg.contains("skipped");
                 let (status, color_status) = if task_result.result.failed {
                     ("FAILED", "FAILED".red().bold())
+                } else if is_skipped {
+                    ("SKIPPED", "SKIPPED".blue().bold())
                 } else if task_result.result.changed {
                     ("CHANGED", "CHANGED".yellow().bold())
                 } else {
@@ -151,6 +165,7 @@ fn main() -> Result<()> {
             total_ok += result.ok;
             total_changed += result.changed;
             total_failed += result.failed;
+            total_skipped += result.skipped;
         }
 
         println!();
@@ -160,6 +175,7 @@ fn main() -> Result<()> {
     println!("{} {}", "PLAY RECAP".bold(), "*".repeat(50));
     print!("{}={} ", "ok".green(), total_ok);
     print!("{}={} ", "changed".yellow(), total_changed);
+    print!("{}={} ", "skipped".blue(), total_skipped);
     println!("{}={}", "failed".red(), total_failed);
 
     if total_failed > 0 {

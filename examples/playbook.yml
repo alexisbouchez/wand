@@ -7,16 +7,21 @@
   tasks:
     - name: Show hostname
       command: hostname
+      tags: info
 
     - name: Echo greeting
       shell: echo "{{ greeting }} from {{ inventory_hostname }}"
       register: echo_result
+      tags:
+        - info
+        - greeting
 
     - name: Create app directory
       file:
         path: /tmp/{{ app_name }}
         state: directory
         mode: "0755"
+      tags: setup
 
     - name: Copy config file
       copy:
@@ -24,10 +29,12 @@
         content: |
           app_name={{ app_name }}
           host={{ inventory_hostname }}
+      tags: setup
 
     - name: Check if nginx installed
       command: which nginx
       register: nginx_check
+      tags: nginx
 
     - name: Install nginx
       apt:
@@ -36,6 +43,7 @@
       when: nginx_check.rc != "0"
       notify:
         - restart nginx
+      tags: nginx
 
   handlers:
     - name: restart nginx

@@ -28,22 +28,22 @@ PHASE 2: INVENTORY PARSING
 
 PHASE 3: PLAYBOOK PARSING
 -------------------------
-[ ] Parse minimal playbook (hosts + tasks)
-[ ] Parse task with module and args
-[ ] Parse task with name
-[ ] Parse task with when conditional
-[ ] Parse task with register
-[ ] Parse task with loop/with_items
-[ ] Parse task with notify
-[ ] Parse handlers section
-[ ] Parse vars section
+[x] Parse minimal playbook (hosts + tasks)
+[x] Parse task with module and args
+[x] Parse task with name
+[x] Parse task with when conditional
+[x] Parse task with register
+[x] Parse task with loop/with_items
+[x] Parse task with notify
+[x] Parse handlers section
+[x] Parse vars section
 [ ] Parse vars_files
-[ ] Parse become/become_user
+[x] Parse become/become_user
 [ ] Parse roles
 [ ] Parse imports (import_tasks, import_playbook)
 [ ] Parse includes (include_tasks)
 [ ] Playbook validation
-[ ] Tests for playbook parsing
+[x] Tests for playbook parsing
 
 PHASE 4: VARIABLE SYSTEM
 ------------------------

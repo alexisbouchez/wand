@@ -1,9 +1,12 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+pub mod apt;
 pub mod command;
 pub mod copy;
 pub mod file;
+pub mod lineinfile;
+pub mod service;
 pub mod shell;
 pub mod template;
 

@@ -23,7 +23,7 @@ PHASE 2: INVENTORY PARSING
 [ ] Support [all] and [ungrouped] special groups
 [x] Support group children (:children suffix)
 [x] Support host ranges (web[1:10].example.com)
-[ ] Inventory struct with query methods
+ [x] Inventory struct with query methods
 [x] Tests for all inventory formats
 
 PHASE 3: PLAYBOOK PARSING

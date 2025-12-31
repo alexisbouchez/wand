@@ -156,7 +156,7 @@ impl Inventory {
         let mut hosts = Vec::new();
         let mut visited = std::collections::HashSet::new();
 
-        if let Some(group) = self.groups.get(group_name) {
+        if self.groups.contains_key(group_name) {
             self.collect_hosts_recursive(group_name, &mut hosts, &mut visited);
         }
 

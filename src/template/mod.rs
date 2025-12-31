@@ -259,7 +259,11 @@ fn apply_filters(value: &str, filter_chain: &str, vars: &HashMap<String, String>
             let args = args.trim_end_matches(')');
             result = apply_filter_with_args(&result, name.trim(), args, vars);
         } else {
-            result = apply_filter(&result, filter);
+            if matches!(filter, "basename" | "dirname" | "to_json" | "to_yaml") {
+                result = apply_filter_no_args(&result, filter);
+            } else {
+                result = apply_filter(&result, filter);
+            }
         }
     }
 
@@ -308,7 +312,51 @@ fn apply_filter_with_args(value: &str, filter: &str, args: &str, vars: &HashMap<
                 value.to_string()
             }
         }
-        "join" => value.to_string(), // For lists, handled separately
+        "regex_replace" => {
+            if let Some((pattern, replacement)) = arg.split_once(',') {
+                let pattern = pattern.trim().trim_matches(|c| c == '"' || c == '\'');
+                let replacement = replacement.trim().trim_matches(|c| c == '"' || c == '\'');
+                if let Ok(re) = regex::Regex::new(pattern) {
+                    re.replace_all(value, replacement).to_string()
+                } else {
+                    value.to_string()
+                }
+            } else {
+                value.to_string()
+            }
+        }
+        "join" => {
+            value.split(',').map(|s| s.trim()).collect::<Vec<_>>().join(&arg)
+        }
+        "split" => {
+            value.split(&arg).map(|s| s.to_string()).collect::<Vec<_>>().join(", ")
+        }
+        _ => value.to_string(),
+    }
+}
+
+fn apply_filter_no_args(value: &str, filter: &str) -> String {
+    match filter {
+        "basename" => {
+            std::path::Path::new(value)
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or(value)
+                .to_string()
+        }
+        "dirname" => {
+            std::path::Path::new(value)
+                .parent()
+                .and_then(|s| s.to_str())
+                .unwrap_or(value)
+                .to_string()
+        }
+        "to_json" => {
+            serde_json::to_string(value).unwrap_or_else(|_| value.to_string())
+        }
+        "to_yaml" => {
+            serde_yaml::to_string(value).unwrap_or_else(|_| value.to_string())
+        }
         _ => value.to_string(),
     }
 }
@@ -452,5 +500,41 @@ mod tests {
         let tpl = "{% if a %}{% if b %}both{% endif %}{% endif %}";
         let result = render(tpl, &vars(&[("a", "1"), ("b", "1")]));
         assert_eq!(result, "both");
+    }
+
+    #[test]
+    fn filter_join() {
+        let result = render("{{ items | join(', ') }}", &vars(&[("items", "a,b,c")]));
+        assert_eq!(result, "a, b, c");
+    }
+
+    #[test]
+    fn filter_split() {
+        let result = render("{{ path | split('/') }}", &vars(&[("path", "/usr/local/bin")]));
+        assert_eq!(result, ", usr, local, bin");
+    }
+
+    #[test]
+    fn filter_basename() {
+        let result = render("{{ path | basename }}", &vars(&[("path", "/usr/local/bin/bash")]));
+        assert_eq!(result, "bash");
+    }
+
+    #[test]
+    fn filter_dirname() {
+        let result = render("{{ path | dirname }}", &vars(&[("path", "/usr/local/bin/bash")]));
+        assert_eq!(result, "/usr/local/bin");
+    }
+
+    #[test]
+    fn filter_regex_replace() {
+        let result = render("{{ text | regex_replace('\\d+', 'N') }}", &vars(&[("text", "test123abc456")]));
+        assert_eq!(result, "testNabcN");
+    }
+
+    #[test]
+    fn filter_to_json() {
+        let result = render("{{ value | to_json }}", &vars(&[("value", "hello")]));
+        assert_eq!(result, "\"hello\"");
     }
 }

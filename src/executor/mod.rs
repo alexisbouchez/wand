@@ -506,6 +506,7 @@ fn run_module(
         "command" => run_command(conn, args),
         "shell" => run_shell(conn, args),
         "raw" => run_raw(conn, args),
+        "script" => run_script(conn, args),
         "copy" => run_copy(conn, args),
         "file" => run_file(conn, args),
         "template" => run_template(conn, args, vars),
@@ -583,6 +584,66 @@ fn run_raw(conn: &Connection, args: &ModuleArgs) -> ModuleResult {
         Ok(result) => ModuleResult::changed("raw command executed")
             .with_output(&result.stdout, &result.stderr, result.exit_code),
         Err(e) => ModuleResult::failed(&format!("raw command failed: {}", e)),
+    }
+}
+
+fn run_script(conn: &Connection, args: &ModuleArgs) -> ModuleResult {
+    let script_path = match args.get("_raw_params") {
+        Some(p) => p.clone(),
+        None => match args.require("cmd") {
+            Ok(p) => p.clone(),
+            Err(e) => return ModuleResult::failed(&e),
+        },
+    };
+
+    let chdir = args.get("chdir");
+    let creates = args.get("creates");
+    let removes = args.get("removes");
+
+    if !std::path::Path::new(&script_path).exists() {
+        return ModuleResult::failed(&format!("script not found: {}", script_path));
+    }
+
+    if let Some(path) = creates {
+        match conn.exec(&format!("test -e {}", path)) {
+            Ok(result) if result.exit_code == 0 => {
+                return ModuleResult::ok("skipped, creates exists");
+            }
+            _ => {}
+        }
+    }
+
+    if let Some(path) = removes {
+        match conn.exec(&format!("test -e {}", path)) {
+            Ok(result) if result.exit_code != 0 => {
+                return ModuleResult::ok("skipped, removes does not exist");
+            }
+            _ => {}
+        }
+    }
+
+    let script_content = match std::fs::read(&script_path) {
+        Ok(content) => content,
+        Err(e) => return ModuleResult::failed(&format!("failed to read script: {}", e)),
+    };
+
+    let remote_path = "/tmp/.ansible_script";
+
+    match conn.write_file(remote_path, &script_content, 0o700) {
+        Ok(_) => {}
+        Err(e) => return ModuleResult::failed(&format!("failed to upload script: {}", e)),
+    }
+
+    let full_cmd = if let Some(dir) = chdir {
+        format!("cd {} && {}", dir, remote_path)
+    } else {
+        remote_path.to_string()
+    };
+
+    match conn.exec(&full_cmd) {
+        Ok(result) => ModuleResult::changed("script executed")
+            .with_output(&result.stdout, &result.stderr, result.exit_code),
+        Err(e) => ModuleResult::failed(&format!("script failed: {}", e)),
     }
 }
 

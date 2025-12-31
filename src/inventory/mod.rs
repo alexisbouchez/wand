@@ -152,6 +152,10 @@ impl Inventory {
         inventory
     }
 
+    pub fn get_all_hosts(&self) -> Vec<String> {
+        self.hosts.keys().cloned().collect()
+    }
+
     pub fn get_group_hosts(&self, group_name: &str) -> Vec<String> {
         let mut hosts = Vec::new();
         let mut visited = std::collections::HashSet::new();
@@ -393,5 +397,20 @@ mod tests {
         );
         let vars = inv.get_host_vars("web1");
         assert_eq!(vars.get("ansible_host").unwrap(), "192.168.1.1");
+    }
+
+    #[test]
+    fn get_all_hosts() {
+        let inv = Inventory::from_ini("[web]\nweb1\nweb2\n[db]\ndb1");
+        let mut hosts = inv.get_all_hosts();
+        hosts.sort();
+        assert_eq!(hosts, vec!["db1", "web1", "web2"]);
+    }
+
+    #[test]
+    fn get_all_hosts_empty() {
+        let inv = Inventory::from_ini("");
+        let hosts = inv.get_all_hosts();
+        assert!(hosts.is_empty());
     }
 }

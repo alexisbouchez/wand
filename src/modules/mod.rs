@@ -6,6 +6,7 @@ pub mod command;
 pub mod copy;
 pub mod file;
 pub mod lineinfile;
+pub mod raw;
 pub mod service;
 pub mod shell;
 pub mod template;

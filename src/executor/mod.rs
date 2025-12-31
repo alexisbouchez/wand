@@ -505,6 +505,7 @@ fn run_module(
     match module {
         "command" => run_command(conn, args),
         "shell" => run_shell(conn, args),
+        "raw" => run_raw(conn, args),
         "copy" => run_copy(conn, args),
         "file" => run_file(conn, args),
         "template" => run_template(conn, args, vars),
@@ -558,6 +559,30 @@ fn run_shell(conn: &Connection, args: &ModuleArgs) -> ModuleResult {
         Ok(result) => ModuleResult::changed("shell executed")
             .with_output(&result.stdout, &result.stderr, result.exit_code),
         Err(e) => ModuleResult::failed(&format!("shell failed: {}", e)),
+    }
+}
+
+fn run_raw(conn: &Connection, args: &ModuleArgs) -> ModuleResult {
+    let cmd = match args.get("_raw") {
+        Some(c) => c.clone(),
+        None => match args.require("cmd") {
+            Ok(c) => c.clone(),
+            Err(e) => return ModuleResult::failed(&e),
+        },
+    };
+
+    let chdir = args.get("chdir");
+
+    let full_cmd = if let Some(dir) = chdir {
+        format!("cd {} && {}", dir, cmd)
+    } else {
+        cmd
+    };
+
+    match conn.exec(&full_cmd) {
+        Ok(result) => ModuleResult::changed("raw command executed")
+            .with_output(&result.stdout, &result.stderr, result.exit_code),
+        Err(e) => ModuleResult::failed(&format!("raw command failed: {}", e)),
     }
 }
 

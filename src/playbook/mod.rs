@@ -12,6 +12,8 @@ pub struct Play {
     pub handlers: Vec<Task>,
     #[serde(default)]
     pub vars: HashMap<String, serde_yaml::Value>,
+    #[serde(default, rename = "vars_files")]
+    pub vars_files: Vec<String>,
     #[serde(default, rename = "become")]
     pub become_: bool,
     #[serde(default)]
@@ -257,5 +259,32 @@ mod tests {
 "#;
         let plays = parse_playbook(yaml).unwrap();
         assert!(plays[0].tasks[0].tags.is_empty());
+    }
+
+    #[test]
+    fn parse_vars_files() {
+        let yaml = r#"
+- hosts: all
+  vars_files:
+    - vars/common.yml
+    - vars/production.yml
+  tasks:
+    - command: echo hello
+"#;
+        let plays = parse_playbook(yaml).unwrap();
+        assert_eq!(plays[0].vars_files.len(), 2);
+        assert_eq!(plays[0].vars_files[0], "vars/common.yml");
+        assert_eq!(plays[0].vars_files[1], "vars/production.yml");
+    }
+
+    #[test]
+    fn parse_vars_files_empty() {
+        let yaml = r#"
+- hosts: all
+  tasks:
+    - command: echo hello
+"#;
+        let plays = parse_playbook(yaml).unwrap();
+        assert!(plays[0].vars_files.is_empty());
     }
 }

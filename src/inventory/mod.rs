@@ -151,6 +151,79 @@ impl Inventory {
 
         inventory
     }
+
+    pub fn get_group_hosts(&self, group_name: &str) -> Vec<String> {
+        let mut hosts = Vec::new();
+        let mut visited = std::collections::HashSet::new();
+
+        if let Some(group) = self.groups.get(group_name) {
+            self.collect_hosts_recursive(group_name, &mut hosts, &mut visited);
+        }
+
+        hosts
+    }
+
+    fn collect_hosts_recursive(
+        &self,
+        group_name: &str,
+        hosts: &mut Vec<String>,
+        visited: &mut std::collections::HashSet<String>,
+    ) {
+        if visited.contains(group_name) {
+            return;
+        }
+        visited.insert(group_name.to_string());
+
+        if let Some(group) = self.groups.get(group_name) {
+            for host in &group.hosts {
+                if !hosts.contains(host) {
+                    hosts.push(host.clone());
+                }
+            }
+
+            for child in &group.children {
+                self.collect_hosts_recursive(child, hosts, visited);
+            }
+        }
+    }
+
+    pub fn get_host_groups(&self, host_name: &str) -> Vec<String> {
+        let mut groups = Vec::new();
+
+        for (group_name, group) in &self.groups {
+            if group.hosts.contains(&host_name.to_string())
+                || self.get_group_hosts(group_name).contains(&host_name.to_string())
+            {
+                groups.push(group_name.clone());
+            }
+        }
+
+        groups
+    }
+
+    pub fn get_host_vars(&self, host_name: &str) -> HashMap<String, String> {
+        let mut vars = HashMap::new();
+
+        let groups = self.get_host_groups(host_name);
+
+        for group_name in &groups {
+            if let Some(group) = self.groups.get(group_name) {
+                for (k, v) in &group.vars {
+                    if !vars.contains_key(k) {
+                        vars.insert(k.clone(), v.clone());
+                    }
+                }
+            }
+        }
+
+        if let Some(host) = self.hosts.get(host_name) {
+            for (k, v) in &host.vars {
+                vars.insert(k.clone(), v.clone());
+            }
+        }
+
+        vars
+    }
 }
 
 #[cfg(test)]
@@ -260,5 +333,65 @@ mod tests {
         assert!(inv.hosts.contains_key("web01.example.com"));
         assert!(inv.hosts.contains_key("web02.example.com"));
         assert!(inv.hosts.contains_key("web03.example.com"));
+    }
+
+    #[test]
+    fn get_group_hosts_simple() {
+        let inv = Inventory::from_ini("[web]\nweb1\nweb2");
+        let hosts = inv.get_group_hosts("web");
+        assert_eq!(hosts.len(), 2);
+        assert!(hosts.contains(&"web1".to_string()));
+        assert!(hosts.contains(&"web2".to_string()));
+    }
+
+    #[test]
+    fn get_group_hosts_with_children() {
+        let inv = Inventory::from_ini("[web]\nweb1\n[db]\ndb1\n[all:children]\nweb\ndb");
+        let hosts = inv.get_group_hosts("all");
+        assert_eq!(hosts.len(), 2);
+        assert!(hosts.contains(&"web1".to_string()));
+        assert!(hosts.contains(&"db1".to_string()));
+    }
+
+    #[test]
+    fn get_group_hosts_nested_children() {
+        let inv = Inventory::from_ini("[web]\nweb1\n[production:children]\nweb\n[all:children]\nproduction");
+        let hosts = inv.get_group_hosts("all");
+        assert_eq!(hosts.len(), 1);
+        assert!(hosts.contains(&"web1".to_string()));
+    }
+
+    #[test]
+    fn get_host_groups_single() {
+        let inv = Inventory::from_ini("[web]\nweb1");
+        let groups = inv.get_host_groups("web1");
+        assert_eq!(groups, vec!["web"]);
+    }
+
+    #[test]
+    fn get_host_groups_multiple() {
+        let inv = Inventory::from_ini("[web]\nweb1\n[servers:children]\nweb\n[all:children]\nservers");
+        let mut groups = inv.get_host_groups("web1");
+        groups.sort();
+        assert_eq!(groups, vec!["all", "servers", "web"]);
+    }
+
+    #[test]
+    fn get_host_vars() {
+        let inv = Inventory::from_ini(
+            "[web]\nweb1 ansible_host=192.168.1.1\n[web:vars]\nhttp_port=80"
+        );
+        let vars = inv.get_host_vars("web1");
+        assert_eq!(vars.get("ansible_host").unwrap(), "192.168.1.1");
+        assert_eq!(vars.get("http_port").unwrap(), "80");
+    }
+
+    #[test]
+    fn get_host_vars_precedence() {
+        let inv = Inventory::from_ini(
+            "[web]\nweb1 ansible_host=192.168.1.1\n[web:vars]\nansible_host=192.168.1.2"
+        );
+        let vars = inv.get_host_vars("web1");
+        assert_eq!(vars.get("ansible_host").unwrap(), "192.168.1.1");
     }
 }

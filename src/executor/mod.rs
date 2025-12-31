@@ -513,6 +513,7 @@ fn run_module(
         "apt" => run_apt(conn, args),
         "service" => run_service(conn, args),
         "lineinfile" => run_lineinfile(conn, args),
+        "blockinfile" => run_blockinfile(conn, args),
         _ => ModuleResult::failed(&format!("unknown module: {}", module)),
     }
 }
@@ -863,6 +864,136 @@ fn run_lineinfile(conn: &Connection, args: &ModuleArgs) -> ModuleResult {
         Ok(_) => ModuleResult::changed("line added"),
         Err(e) => ModuleResult::failed(&format!("{}", e)),
     }
+}
+
+fn run_blockinfile(conn: &Connection, args: &ModuleArgs) -> ModuleResult {
+    let path = match args.require("path") {
+        Ok(p) => p.clone(),
+        Err(e) => return ModuleResult::failed(&e),
+    };
+
+    let block = match args.require("block") {
+        Ok(b) => b.clone(),
+        Err(e) => return ModuleResult::failed(&e),
+    };
+
+    let marker = args.get_or("marker", "# {mark} ANSIBLE MANAGED BLOCK");
+    let insertafter = args.get("insertafter");
+    let insertbefore = args.get("insertbefore");
+    let create = args.get_bool("create");
+
+    let content = match conn.read_file(&path) {
+        Ok(c) => String::from_utf8_lossy(&c).to_string(),
+        Err(_) => {
+            if create {
+                String::new()
+            } else {
+                return ModuleResult::ok("file not found");
+            }
+        }
+    };
+
+    let begin_marker = marker.replace("{mark}", "BEGIN");
+    let end_marker = marker.replace("{mark}", "END");
+
+    if content.contains(&begin_marker) && content.contains(&end_marker) {
+        let current_block = extract_block(&content, &begin_marker, &end_marker);
+
+        if current_block == block {
+            return ModuleResult::ok("block already present");
+        }
+
+        let new_content = replace_block(&content, &begin_marker, &end_marker, &block);
+
+        match conn.write_file(&path, new_content.as_bytes(), 0o644) {
+            Ok(_) => {
+                let diff = compute_diff_block_helper(&content, &new_content);
+                ModuleResult::changed("block replaced").with_diff(diff)
+            }
+            Err(e) => ModuleResult::failed(&format!("failed to write: {}", e)),
+        }
+    } else {
+        let new_content = insert_block(&content, &begin_marker, &end_marker, &block, insertafter, insertbefore);
+
+        match conn.write_file(&path, new_content.as_bytes(), 0o644) {
+            Ok(_) => {
+                let diff = compute_diff_block_helper(&content, &new_content);
+                ModuleResult::changed("block inserted").with_diff(diff)
+            }
+            Err(e) => ModuleResult::failed(&format!("failed to write: {}", e)),
+        }
+    }
+}
+
+fn extract_block(content: &str, begin: &str, end: &str) -> String {
+    if let Some(start) = content.find(begin) {
+        if let Some(end_pos) = content[start..].find(end) {
+            let block_start = start + begin.len();
+            let block_end = start + end_pos;
+            return content[block_start..block_end].trim().to_string();
+        }
+    }
+    String::new()
+}
+
+fn replace_block(content: &str, begin: &str, end: &str, block: &str) -> String {
+    if let Some(start) = content.find(begin) {
+        if let Some(end_pos) = content[start..].find(end) {
+            let block_start = start;
+            let block_end = start + end_pos + end.len();
+            let new_block = format!("{}\n{}\n{}", begin, block.trim(), end);
+            return format!("{}{}{}", &content[..block_start], &new_block, &content[block_end..]);
+        }
+    }
+    content.to_string()
+}
+
+fn insert_block(
+    content: &str,
+    begin: &str,
+    end: &str,
+    block: &str,
+    insertafter: Option<&String>,
+    insertbefore: Option<&String>,
+) -> String {
+    let new_block = format!("\n{}\n{}\n{}\n", begin, block.trim(), end);
+
+    if let Some(pattern) = insertafter {
+        if let Some(pos) = content.find(pattern) {
+            if let Some(line_end) = content[pos..].find('\n') {
+                let insert_pos = pos + line_end + 1;
+                return format!("{}{}{}", &content[..insert_pos], &new_block, &content[insert_pos..]);
+            }
+        }
+    }
+
+    if let Some(pattern) = insertbefore {
+        if let Some(pos) = content.find(pattern) {
+            return format!("{}{}{}", &content[..pos], &new_block, &content[pos..]);
+        }
+    }
+
+    if content.is_empty() {
+        format!("{}\n{}\n{}", begin, block.trim(), end)
+    } else {
+        format!("{}{}", content, &new_block)
+    }
+}
+
+fn compute_diff_block_helper(old: &str, new: &str) -> String {
+    let mut diff = String::new();
+
+    for line in old.lines() {
+        diff.push_str(&format!("-{}\n", line));
+    }
+
+    diff.push_str("---\n");
+
+    for line in new.lines() {
+        diff.push_str(&format!("+{}\n", line));
+    }
+
+    diff
 }
 
 fn eval_when(condition: &str, vars: &HashMap<String, String>) -> bool {

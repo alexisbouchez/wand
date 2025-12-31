@@ -37,7 +37,7 @@ PHASE 3: PLAYBOOK PARSING
 [x] Parse task with notify
 [x] Parse handlers section
 [x] Parse vars section
-[ ] Parse vars_files
+[x] Parse vars_files
 [x] Parse become/become_user
 [ ] Parse roles
 [ ] Parse imports (import_tasks, import_playbook)

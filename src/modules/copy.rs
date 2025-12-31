@@ -24,7 +24,10 @@ pub fn run(conn: &SshConnection, args: &ModuleArgs) -> ModuleResult {
         }
 
         match conn.write_file(&dest, content.as_bytes(), mode_int) {
-            Ok(_) => ModuleResult::changed("content copied"),
+            Ok(_) => {
+                let diff = compute_diff("", content);
+                ModuleResult::changed("content copied").with_diff(diff)
+            }
             Err(e) => ModuleResult::failed(&format!("failed to write content: {}", e)),
         }
     } else if let Some(src) = args.get("src") {
@@ -41,22 +44,43 @@ pub fn run(conn: &SshConnection, args: &ModuleArgs) -> ModuleResult {
         };
 
         // Check if remote file exists and has same content
-        match conn.read_file(&dest) {
+        let old_content = match conn.read_file(&dest) {
             Ok(existing) => {
                 if existing == content {
                     return ModuleResult::ok("file unchanged");
                 }
+                String::from_utf8_lossy(&existing).to_string()
             }
-            Err(_) => {} // File doesn't exist, will create
-        }
+            Err(_) => String::new(), // File doesn't exist, will create
+        };
 
         match conn.write_file(&dest, &content, mode_int) {
-            Ok(_) => ModuleResult::changed("file copied"),
+            Ok(_) => {
+                let new_content = String::from_utf8_lossy(&content).to_string();
+                let diff = compute_diff(&old_content, &new_content);
+                ModuleResult::changed("file copied").with_diff(diff)
+            }
             Err(e) => ModuleResult::failed(&format!("failed to copy file: {}", e)),
         }
     } else {
         ModuleResult::failed("either 'src' or 'content' is required")
     }
+}
+
+fn compute_diff(old: &str, new: &str) -> String {
+    let mut diff = String::new();
+
+    for line in old.lines() {
+        diff.push_str(&format!("-{}\n", line));
+    }
+
+    diff.push_str("---\n");
+
+    for line in new.lines() {
+        diff.push_str(&format!("+{}\n", line));
+    }
+
+    diff
 }
 
 #[cfg(test)]

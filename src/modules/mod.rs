@@ -23,6 +23,8 @@ pub struct ModuleResult {
     pub stderr: String,
     #[serde(default)]
     pub rc: i32,
+    #[serde(default)]
+    pub diff: Option<String>,
     #[serde(flatten)]
     pub extra: HashMap<String, serde_yaml::Value>,
 }
@@ -36,6 +38,7 @@ impl ModuleResult {
             stdout: String::new(),
             stderr: String::new(),
             rc: 0,
+            diff: None,
             extra: HashMap::new(),
         }
     }
@@ -48,6 +51,7 @@ impl ModuleResult {
             stdout: String::new(),
             stderr: String::new(),
             rc: 0,
+            diff: None,
             extra: HashMap::new(),
         }
     }
@@ -60,6 +64,7 @@ impl ModuleResult {
             stdout: String::new(),
             stderr: String::new(),
             rc: 1,
+            diff: None,
             extra: HashMap::new(),
         }
     }
@@ -71,6 +76,11 @@ impl ModuleResult {
         if rc != 0 {
             self.failed = true;
         }
+        self
+    }
+
+    pub fn with_diff(mut self, diff: String) -> Self {
+        self.diff = Some(diff);
         self
     }
 }

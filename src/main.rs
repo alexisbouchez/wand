@@ -149,6 +149,22 @@ fn main() -> Result<()> {
                     task_result.task_name
                 );
 
+                if cli.diff && task_result.result.diff.is_some() {
+                    println!("--- before");
+                    println!("+++ after");
+                    for line in task_result.result.diff.as_ref().unwrap().lines() {
+                        if line.starts_with('-') {
+                            println!("{}", line.red());
+                        } else if line.starts_with('+') {
+                            println!("{}", line.green());
+                        } else if line.starts_with(' ') {
+                            println!("{}", line.dimmed());
+                        } else {
+                            println!("{}", line);
+                        }
+                    }
+                }
+
                 if cli.verbose > 0 && !task_result.result.stdout.is_empty() {
                     println!("  {}: {}", "stdout".dimmed(), task_result.result.stdout.trim());
                 }

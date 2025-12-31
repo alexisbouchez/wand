@@ -1,9 +1,25 @@
 use std::collections::HashMap;
 
 pub fn render(template: &str, vars: &HashMap<String, String>) -> String {
-    let result = process_conditionals(template, vars);
+    let result = process_comments(template);
+    let result = process_conditionals(&result, vars);
     let result = process_loops(&result, vars);
     process_variables(&result, vars)
+}
+
+fn process_comments(template: &str) -> String {
+    let mut result = template.to_string();
+
+    while let Some(start) = result.find("{#") {
+        if let Some(end) = result[start..].find("#}") {
+            let end = start + end + 2;
+            result = format!("{}{}", &result[..start], &result[end..]);
+        } else {
+            break;
+        }
+    }
+
+    result
 }
 
 fn process_conditionals(template: &str, vars: &HashMap<String, String>) -> String {
@@ -536,5 +552,23 @@ mod tests {
     fn filter_to_json() {
         let result = render("{{ value | to_json }}", &vars(&[("value", "hello")]));
         assert_eq!(result, "\"hello\"");
+    }
+
+    #[test]
+    fn comment_simple() {
+        let result = render("Hello{# comment #} World!", &vars(&[]));
+        assert_eq!(result, "Hello World!");
+    }
+
+    #[test]
+    fn comment_multiline() {
+        let result = render("Hello{# this is a\nmulti-line comment #} World!", &vars(&[]));
+        assert_eq!(result, "Hello World!");
+    }
+
+    #[test]
+    fn comment_with_vars() {
+        let result = render("{{ name }}{# comment #} {{ value }}", &vars(&[("name", "foo"), ("value", "bar")]));
+        assert_eq!(result, "foo bar");
     }
 }
